@@ -66,8 +66,13 @@ python3.12 -m venv .venv-bake
 Type a line and press enter to hear it. The REPL auto-spawns the server (which
 stops `gpt-oss:20b` first to free VRAM, then loads + warms both models).
 
-Commands: `:voice <name>`, `:clone <id|path>`, `:backend kokoro|chatterbox`,
-`:exag/:cfg/:temp/:speed <number>`, `:voices`, `:help`, `:quit` (or `:quit --stop`).
+Commands:
+- `:voice <name> [text]` — switch voice (backend auto-resolved from the registry);
+  any trailing text is spoken immediately in that voice.
+- `:clone <id|path>` — clone a library voice id, or add+use an arbitrary WAV.
+- `:backend kokoro|chatterbox` — force the backend.
+- `:exag` / `:cfg` / `:temp` / `:speed <number>` — tune.
+- `:voices` — list presets + library clips. `:help`. `:quit` (or `:quit --stop`).
 
 Bake a described voice (runs offline, in the bake venv):
 
