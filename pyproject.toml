@@ -1,0 +1,10 @@
+[project]
+name = "hosaka"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+markers = [
+    "gpu: requires a CUDA GPU and downloaded models (deselect with -m 'not gpu')",
+]
+addopts = "-q"

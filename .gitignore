@@ -1,0 +1,7 @@
+.venv-server/
+.venv-bake/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.wav
+!hosaka/sample_voices/*.wav
