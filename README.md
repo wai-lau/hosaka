@@ -79,11 +79,23 @@ Bake a described voice (runs offline, in the bake venv):
 
 Then in the REPL: `:clone calm_brit`, speak a line.
 
+## Realtime vs quality
+
+Benchmarked on the RTX 5070 Ti (WSL2):
+
+- **Kokoro presets = realtime.** RTF ~0.04, first audio well under 1s. This is
+  the live path (`:voice <name>`).
+- **Chatterbox cloning = quality mode (NOT realtime).** The model runs at
+  RTF ~1.0 with a ~2s fixed per-call overhead, so it cannot stream smoothly
+  under 1s on this card. Instead each fragment is generated in full and then
+  played (smooth, no stutter), at the cost of ~2-3s before you hear a cloned
+  line. It keeps the full knob set (`:exag`, `:cfg`, `:temp`). Fast realtime
+  cloning (Chatterbox Turbo or XTTS-v2) is a deferred follow-up — Turbo is not
+  in the `davidbrowne17` streaming fork, so it needs separate integration.
+
 ## Accepted constraints
 
-- Chatterbox first-chunk latency is realistically ~500 ms - 1 s (not 300 ms);
-  `scripts/benchmark_latency.py` is the gate. Fallback ladder if it misses:
-  Chatterbox Turbo (loses the knobs) then XTTS-v2.
+- Cloning is ~2-3s, not realtime, on this hardware (see above).
 - No native pitch control on any engine.
 - Chatterbox output carries a non-removable Perth watermark. Local use only.
 - Parler is the least-maintained piece; isolated in its own venv, offline only.

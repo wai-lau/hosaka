@@ -1,48 +1,44 @@
 import numpy as np
 import torch
+from scipy.signal import resample_poly
 from chatterbox.tts import ChatterboxTTS
-from hosaka.config import SAMPLE_RATE, DEFAULT_VOICE
+from hosaka.config import SAMPLE_RATE
 from hosaka.library import VoiceLibrary
-
-_XFADE = int(0.020 * SAMPLE_RATE)   # 20 ms crossfade
 
 
 class ChatterboxEngine:
-    """Original Chatterbox via the streaming fork. Cloning + tuning."""
+    """Original Chatterbox cloning + tuning, run as a NON-realtime QUALITY mode.
+
+    On the RTX 5070 Ti this model runs at RTF ~1.0, so per-chunk streaming
+    underruns and stutters. Instead we generate each fragment in full, then
+    hand the whole waveform to the caller in one piece. The server's
+    fragment loop overlaps a fragment's generation with the previous
+    fragment's playback, so audio stays smooth at the cost of ~1-2s before
+    the first fragment is heard. Keeps the full knob set
+    (exaggeration / cfg_weight / temperature).
+    """
 
     def __init__(self, library: VoiceLibrary):
         self.library = library
         self.model = ChatterboxTTS.from_pretrained(device="cuda")
+        self.sr = int(self.model.sr)
 
     def warmup(self) -> None:
-        # Warm up with a tiny utterance using the model's built-in voice
-        # (no reference) so kernels/caches are allocated.
-        for _ in self._raw_stream("warm up.", None,
-                                  {"exaggeration": 0.5, "cfg_weight": 0.4,
-                                   "temperature": 0.8}):
+        for _ in self.stream("warm up.", "", {}):
             pass
 
     def stream(self, text, voice, params):
         ref = self.library.path_for(voice)
-        ref_path = str(ref) if ref else None
-        prev_tail = None
-        for chunk in self._raw_stream(text, ref_path, params):
-            if prev_tail is not None and len(chunk) > _XFADE:
-                fade = np.linspace(0.0, 1.0, _XFADE, dtype=np.float32)
-                chunk[:_XFADE] = chunk[:_XFADE] * fade + prev_tail * (1.0 - fade)
-            prev_tail = chunk[-_XFADE:].copy() if len(chunk) >= _XFADE else None
-            yield chunk
-
-    def _raw_stream(self, text, ref_path, params):
         kw = dict(
             exaggeration=float(params.get("exaggeration", 0.5)),
             cfg_weight=float(params.get("cfg_weight", 0.4)),
             temperature=float(params.get("temperature", 0.8)),
-            chunk_size=50,
         )
-        if ref_path:
-            kw["audio_prompt_path"] = ref_path
+        if ref is not None:
+            kw["audio_prompt_path"] = str(ref)
         with torch.inference_mode():
-            for audio_chunk, _metrics in self.model.generate_stream(text, **kw):
-                arr = audio_chunk.detach().cpu().numpy().astype(np.float32)
-                yield np.ascontiguousarray(arr.reshape(-1))
+            wav = self.model.generate(text, **kw)
+        arr = wav.detach().cpu().numpy().astype(np.float32).reshape(-1)
+        if self.sr != SAMPLE_RATE:
+            arr = resample_poly(arr, SAMPLE_RATE, self.sr).astype(np.float32)
+        yield np.ascontiguousarray(arr)
