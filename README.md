@@ -51,8 +51,11 @@ python3.12 -m venv .venv-bake
   torch==2.9.1+cu128 torchaudio==2.9.1+cu128 \
   --index-url https://download.pytorch.org/whl/cu128
 .venv-bake/bin/pip install parler-tts --no-deps
-.venv-bake/bin/pip install transformers==4.46.1 descript-audio-codec soundfile numpy scipy
+.venv-bake/bin/pip install transformers==4.46.1 descript-audio-codec soundfile numpy scipy sentencepiece
+.venv-bake/bin/pip install "protobuf>=4.0.0,<5"   # sentencepiece needs >=3.20; default drags in 3.19.6
 ```
+
+(Or just run `bash scripts/setup_bake_venv.sh`.)
 
 ## Use
 

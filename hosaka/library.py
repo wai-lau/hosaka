@@ -31,7 +31,11 @@ class VoiceLibrary:
 
     def add(self, voice_id, wav_path, source, params=None, created="") -> VoiceEntry:
         dest = self.root / f"{voice_id}.wav"
-        shutil.copyfile(wav_path, dest)
+        src = Path(wav_path)
+        # Idempotent when the source already is the destination (e.g. the bake
+        # CLI writes straight into the voices dir, then registers it).
+        if src.resolve() != dest.resolve():
+            shutil.copyfile(src, dest)
         entry = VoiceEntry(voice_id, str(dest), source, params or {}, created)
         data = self._read()
         data[voice_id] = asdict(entry)

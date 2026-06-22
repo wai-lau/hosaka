@@ -32,3 +32,18 @@ def test_persists_across_instances(tmp_path):
 
 def test_get_missing_returns_none(tmp_path):
     assert VoiceLibrary(tmp_path / "voices").get("nope") is None
+
+
+def test_add_when_src_is_already_dest_is_idempotent(tmp_path):
+    # The bake CLI writes the WAV straight into the voices dir, then registers
+    # that same path. add() must not raise SameFileError.
+    root = tmp_path / "voices"
+    lib = VoiceLibrary(root)
+    dest = root / "baked.wav"
+    dest.write_bytes(b"RIFFbaked")
+
+    entry = lib.add("baked", dest, source="bake")
+
+    assert entry.id == "baked"
+    assert Path(entry.path).read_bytes() == b"RIFFbaked"
+    assert lib.get("baked").source == "bake"
