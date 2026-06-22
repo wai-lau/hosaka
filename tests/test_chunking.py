@@ -37,6 +37,13 @@ def test_every_fragment_capped_for_long_run_on_sentence():
     assert len(out) > 1
 
 
+def test_wrap_prefers_clause_boundary_over_word_boundary():
+    # A long sentence split mid-clause should break after a comma, not mid-phrase.
+    text = "alpha beta gamma, delta epsilon zeta eta theta phrase here."
+    out = split_fragments(text, first_max_chars=200, max_chars=30)
+    assert out[0].rstrip().endswith(",")
+
+
 def test_long_non_first_sentence_is_also_capped():
     text = "Hi. " + "word " * 100  # second sentence ~500 chars
     out = split_fragments(text.strip(), max_chars=120)

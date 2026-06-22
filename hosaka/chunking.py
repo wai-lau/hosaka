@@ -1,6 +1,7 @@
 import re
 
 _SENT_END = re.compile(r"(?<=[.!?])\s+")
+_CLAUSE_END = re.compile(r"[,;:](?=\s)")
 
 
 def split_fragments(text: str, first_max_chars: int = 60, max_chars: int = 280) -> list[str]:
@@ -37,11 +38,26 @@ def _wrap(s: str, limit: int) -> list[str]:
     s = s.strip()
     out: list[str] = []
     while len(s) > limit:
-        cut = s.rfind(" ", 0, limit)
-        if cut <= 0:  # single word longer than limit: hard cut
-            cut = limit
+        cut = _boundary(s, limit)
         out.append(s[:cut].rstrip())
         s = s[cut:].lstrip()
     if s:
         out.append(s)
     return out
+
+
+def _boundary(s: str, limit: int) -> int:
+    """Best cut index within limit: prefer a clause break, then a space.
+
+    A clause break (`, ; :` followed by space) makes the fragment seam land
+    on a natural pause; it is only taken past the halfway point so fragments
+    stay reasonably full. Falls back to the last word boundary, then a hard
+    cut for a single word longer than the limit.
+    """
+    cut = s.rfind(" ", 0, limit)
+    if cut <= 0:  # single word longer than limit
+        cut = limit
+    for m in _CLAUSE_END.finditer(s[:limit]):
+        if m.start() >= limit // 2:
+            cut = m.start() + 1  # keep the punctuation with the fragment
+    return cut
