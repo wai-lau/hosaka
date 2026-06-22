@@ -1,0 +1,18 @@
+# Linting at commit time. ruff handles both lint (with autofix) and formatting.
+# Self-contained: pre-commit builds an isolated env with ruff, so this works
+# without relying on a specific venv being on PATH.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check --fix
+        language: python
+        additional_dependencies: ["ruff>=0.10"]
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: python
+        additional_dependencies: ["ruff>=0.10"]
+        types_or: [python, pyi]

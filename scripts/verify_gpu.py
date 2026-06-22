@@ -1,4 +1,5 @@
 import sys
+
 import torch
 
 
@@ -13,7 +14,7 @@ def main() -> int:
     if cap != (12, 0):
         print(f"WARN: expected sm_120 (12, 0), got {cap}")
     x = torch.randn(4096, 4096, device="cuda")
-    val = (x @ x).sum().item()   # must not raise "no kernel image"
+    val = (x @ x).sum().item()  # must not raise "no kernel image"
     print("matmul ok, sum =", val)
     return 0
 

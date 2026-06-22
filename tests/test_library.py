@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from hosaka.library import VoiceLibrary
 
 
@@ -11,8 +12,9 @@ def test_add_then_get_and_list(tmp_path):
     _make_wav(src)
     lib = VoiceLibrary(tmp_path / "voices")
 
-    entry = lib.add("calm_brit", src, source="bake",
-                    params={"exaggeration": 0.4}, created="2026-06-22")
+    entry = lib.add(
+        "calm_brit", src, source="bake", params={"exaggeration": 0.4}, created="2026-06-22"
+    )
 
     assert entry.id == "calm_brit"
     assert Path(entry.path).exists()

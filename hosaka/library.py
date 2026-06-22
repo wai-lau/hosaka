@@ -1,6 +1,6 @@
 import json
 import shutil
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
@@ -8,7 +8,7 @@ from pathlib import Path
 class VoiceEntry:
     id: str
     path: str
-    source: str            # "recording" | "bake" | "kokoro"
+    source: str  # "recording" | "bake" | "kokoro"
     params: dict
     created: str
 

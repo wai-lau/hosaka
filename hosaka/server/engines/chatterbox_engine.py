@@ -1,7 +1,8 @@
 import numpy as np
 import torch
-from scipy.signal import resample_poly
 from chatterbox.tts import ChatterboxTTS
+from scipy.signal import resample_poly
+
 from hosaka.config import SAMPLE_RATE
 from hosaka.library import VoiceLibrary
 

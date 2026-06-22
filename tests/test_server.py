@@ -1,9 +1,10 @@
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from hosaka.server.engines.base import EngineRegistry
+
 from hosaka.library import VoiceLibrary
 from hosaka.server.app import create_app
+from hosaka.server.engines.base import EngineRegistry
 
 
 class FakeEngine:
@@ -33,25 +34,55 @@ def test_voices_lists_presets_and_library(tmp_path):
     seed.write_bytes(b"RIFFfake")
     lib.add("myclone", seed, source="recording")
     ids = {v["id"] for v in client.get("/v1/voices").json()}
-    assert "af_heart" in ids        # a preset
-    assert "myclone" in ids         # a library clip
+    assert "af_heart" in ids  # a preset
+    assert "myclone" in ids  # a library clip
 
 
 def test_speech_streams_pcm_bytes(tmp_path):
     client, _ = _client(tmp_path)
-    r = client.post("/v1/audio/speech",
-                    json={"input": "Hello. World.", "backend": "kokoro",
-                          "voice": "af_heart"})
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "Hello. World.", "backend": "kokoro", "voice": "af_heart"},
+    )
     assert r.status_code == 200
     assert len(r.content) > 0
-    assert len(r.content) % 4 == 0      # float32 == 4 bytes/sample
+    assert len(r.content) % 4 == 0  # float32 == 4 bytes/sample
 
 
 def test_speech_unknown_backend_is_400(tmp_path):
     client, _ = _client(tmp_path)
-    r = client.post("/v1/audio/speech",
-                    json={"input": "hi", "backend": "bogus"})
+    r = client.post("/v1/audio/speech", json={"input": "hi", "backend": "bogus"})
     assert r.status_code == 400
+
+
+def test_speech_unknown_kokoro_voice_is_400(tmp_path):
+    # "nicole" is not a preset ("af_nicole" is); reject before the stream opens.
+    client, _ = _client(tmp_path)
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "hi", "backend": "kokoro", "voice": "nicole"},
+    )
+    assert r.status_code == 400
+    assert "nicole" in r.json()["detail"]
+
+
+def test_speech_unknown_chatterbox_voice_is_400(tmp_path):
+    client, _ = _client(tmp_path)
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "hi", "backend": "chatterbox", "voice": "ghost"},
+    )
+    assert r.status_code == 400
+
+
+def test_speech_chatterbox_empty_voice_ok(tmp_path):
+    # "" is the model's own default voice and must stream, not 400.
+    client, _ = _client(tmp_path)
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "hi", "backend": "chatterbox", "voice": ""},
+    )
+    assert r.status_code == 200
 
 
 class BoomEngine:
@@ -69,22 +100,21 @@ def test_speech_engine_error_is_not_silent(tmp_path):
     lib = VoiceLibrary(tmp_path / "voices")
     client = TestClient(create_app(reg, lib, do_warmup=False))
     with pytest.raises(RuntimeError, match="engine boom"):
-        client.post("/v1/audio/speech",
-                    json={"input": "hi", "backend": "kokoro"})
+        client.post("/v1/audio/speech", json={"input": "hi", "backend": "kokoro"})
 
 
 def test_lock_released_after_request(tmp_path):
     # After a normal request completes, the GPU slot must be free for the next.
     client, _ = _client(tmp_path)
     for _ in range(3):
-        r = client.post("/v1/audio/speech",
-                        json={"input": "Hello.", "backend": "kokoro"})
+        r = client.post("/v1/audio/speech", json={"input": "Hello.", "backend": "kokoro"})
         assert r.status_code == 200
 
 
 def test_shutdown_route_exists(tmp_path):
     client, _ = _client(tmp_path)
     import hosaka.server.app as appmod
+
     called = {}
     appmod._do_shutdown = lambda: called.setdefault("hit", True)
     r = client.post("/shutdown")

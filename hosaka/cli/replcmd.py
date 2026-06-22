@@ -32,9 +32,13 @@ def parse_line(line: str) -> ReplAction:
         except ValueError:
             return ReplAction("error", f":{cmd} needs a number")
     if cmd == "voice":
-        return ReplAction("voice", args[0]) if args else ReplAction("error", "usage: :voice <name>")
+        if not args:
+            return ReplAction("error", "usage: :voice <name> [text]")
+        return ReplAction("voice", (args[0], " ".join(args[1:])))
     if cmd == "clone":
-        return ReplAction("clone", args[0]) if args else ReplAction("error", "usage: :clone <id|path>")
+        return (
+            ReplAction("clone", args[0]) if args else ReplAction("error", "usage: :clone <id|path>")
+        )
     if cmd == "backend":
         if args and args[0] in ("kokoro", "chatterbox"):
             return ReplAction("backend", args[0])

@@ -1,14 +1,19 @@
 import subprocess
+
 import numpy as np
+
 from hosaka.config import SAMPLE_RATE
 
 
 class PacatPlayer:
     def __init__(self, cmd: list[str] | None = None, latency_msec: int = 50):
         self.cmd = cmd or [
-            "pacat", "--raw",
-            f"--rate={SAMPLE_RATE}", "--channels=1",
-            "--format=float32le", f"--latency-msec={latency_msec}",
+            "pacat",
+            "--raw",
+            f"--rate={SAMPLE_RATE}",
+            "--channels=1",
+            "--format=float32le",
+            f"--latency-msec={latency_msec}",
         ]
         self._proc: subprocess.Popen | None = None
 

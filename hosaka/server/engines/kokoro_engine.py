@@ -1,6 +1,7 @@
 import numpy as np
 from kokoro import KPipeline
-from hosaka.config import SAMPLE_RATE, DEFAULT_VOICE
+
+from hosaka.config import DEFAULT_VOICE
 
 
 class KokoroEngine:

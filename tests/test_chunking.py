@@ -16,8 +16,7 @@ def test_long_first_clause_breaks_on_word_boundary():
     out = split_fragments(text.strip(), first_max_chars=60)
     assert len(out[0]) <= 60
     assert not out[0].endswith(" ")
-    assert "".join(s if s.endswith(" ") else s + " " for s in out).strip() \
-        == text.strip()
+    assert "".join(s if s.endswith(" ") else s + " " for s in out).strip() == text.strip()
 
 
 def test_empty_text_returns_empty_list():

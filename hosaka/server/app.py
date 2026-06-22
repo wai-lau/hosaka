@@ -3,34 +3,40 @@ import os
 import signal
 import subprocess
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from hosaka.config import LLM_MODEL
+
 from hosaka.chunking import split_fragments
+from hosaka.config import LLM_MODEL
+from hosaka.library import VoiceLibrary
 from hosaka.schemas import SpeechRequest, VoiceInfo, clamp_params
 from hosaka.server.engines.base import EngineRegistry
-from hosaka.library import VoiceLibrary
 
 KOKORO_PRESETS = [
-    "af_heart", "af_bella", "af_nicole", "af_sarah", "am_adam",
-    "am_michael", "bf_emma", "bm_george",
+    "af_heart",
+    "af_bella",
+    "af_nicole",
+    "af_sarah",
+    "am_adam",
+    "am_michael",
+    "bf_emma",
+    "bm_george",
 ]
 
 
 def stop_llm() -> None:
     try:
-        subprocess.run(["ollama", "stop", LLM_MODEL],
-                       capture_output=True, timeout=30, check=False)
+        subprocess.run(["ollama", "stop", LLM_MODEL], capture_output=True, timeout=30, check=False)
     except Exception:
-        pass   # best-effort
+        pass  # best-effort
 
 
 def _do_shutdown():
     os.kill(os.getpid(), signal.SIGTERM)
 
 
-def create_app(registry: EngineRegistry, library: VoiceLibrary,
-               do_warmup: bool = True) -> FastAPI:
+def create_app(registry: EngineRegistry, library: VoiceLibrary, do_warmup: bool = True) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -51,10 +57,13 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary,
 
     @app.get("/v1/voices")
     def voices():
-        out = [VoiceInfo(id=p, backend="kokoro", source="preset").model_dump()
-               for p in KOKORO_PRESETS]
-        out += [VoiceInfo(id=e.id, backend="chatterbox", source=e.source).model_dump()
-                for e in library.list()]
+        out = [
+            VoiceInfo(id=p, backend="kokoro", source="preset").model_dump() for p in KOKORO_PRESETS
+        ]
+        out += [
+            VoiceInfo(id=e.id, backend="chatterbox", source=e.source).model_dump()
+            for e in library.list()
+        ]
         return out
 
     @app.post("/v1/audio/speech")
@@ -62,8 +71,18 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary,
         try:
             engine = registry.get(req.backend)
         except KeyError:
-            raise HTTPException(status_code=400,
-                                detail=f"unknown backend: {req.backend}")
+            raise HTTPException(status_code=400, detail=f"unknown backend: {req.backend}") from None
+        # Validate the voice *before* the 200 stream starts. A bad voice that
+        # only fails inside engine.stream() surfaces as a mid-body connection
+        # close (the status line is already sent), which the client can't tell
+        # apart from a crash. Reject it cleanly here instead.
+        if req.backend == "kokoro":
+            if req.voice not in KOKORO_PRESETS:
+                raise HTTPException(status_code=400, detail=f"unknown kokoro voice: {req.voice}")
+        elif req.voice and library.path_for(req.voice) is None:
+            # chatterbox: "" is the model's own default voice; anything else
+            # must resolve to a reference clip in the library.
+            raise HTTPException(status_code=400, detail=f"unknown chatterbox voice: {req.voice}")
         # Acquire the single-GPU slot here, atomically with the busy check
         # (no await between them), so a second concurrent request reliably
         # gets 503 instead of racing. The lock is held until gen() finishes,
@@ -81,12 +100,11 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary,
                 for frag in fragments:
                     queue: asyncio.Queue = asyncio.Queue()
 
-                    def produce(fragment=frag):
+                    def produce(fragment=frag, queue=queue):
                         try:
                             for chunk in engine.stream(fragment, req.voice, params):
-                                loop.call_soon_threadsafe(
-                                    queue.put_nowait, chunk.tobytes())
-                        except BaseException as exc:   # surface engine failures
+                                loop.call_soon_threadsafe(queue.put_nowait, chunk.tobytes())
+                        except BaseException as exc:  # surface engine failures
                             loop.call_soon_threadsafe(queue.put_nowait, exc)
                         finally:
                             loop.call_soon_threadsafe(queue.put_nowait, None)
@@ -108,9 +126,11 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary,
             finally:
                 gpu_lock.release()
 
-        return StreamingResponse(gen(), media_type="application/octet-stream",
-                                 headers={"X-Accel-Buffering": "no",
-                                          "Cache-Control": "no-cache"})
+        return StreamingResponse(
+            gen(),
+            media_type="application/octet-stream",
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+        )
 
     @app.post("/shutdown")
     def shutdown():

@@ -7,8 +7,18 @@ def test_plain_text_is_speak():
 
 
 def test_voice_command():
-    assert parse_line(":voice af_bella").value == "af_bella"
+    assert parse_line(":voice af_bella").value == ("af_bella", "")
     assert parse_line(":voice af_bella").kind == "voice"
+
+
+def test_voice_command_with_inline_text():
+    a = parse_line(":voice calm_brit hello there")
+    assert a.kind == "voice"
+    assert a.value == ("calm_brit", "hello there")
+
+
+def test_voice_command_no_name_is_error():
+    assert parse_line(":voice").kind == "error"
 
 
 def test_set_param_parses_float():

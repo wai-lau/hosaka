@@ -3,11 +3,12 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
 import httpx
-from hosaka.config import (SERVER_URL, SERVER_PORT, DEFAULT_BACKEND,
-                           DEFAULT_VOICE, VOICE_DIR)
+
 from hosaka.audio import PacatPlayer
 from hosaka.cli.replcmd import parse_line
+from hosaka.config import DEFAULT_BACKEND, DEFAULT_VOICE, SERVER_PORT, SERVER_URL, VOICE_DIR
 from hosaka.library import VoiceLibrary
 
 
@@ -20,30 +21,53 @@ def _server_up() -> bool:
 
 def _spawn_server() -> None:
     log_path = Path(tempfile.gettempdir()) / "hosaka-server.log"
-    log = open(log_path, "w")     # capture startup errors instead of discarding
+    log = open(log_path, "w")  # capture startup errors instead of discarding
     subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "hosaka.server.main:app",
-         "--host", "127.0.0.1", "--port", str(SERVER_PORT)],
-        stdout=log, stderr=log)
-    for _ in range(120):          # wait up to ~60s for model load + warmup
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "hosaka.server.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(SERVER_PORT),
+        ],
+        stdout=log,
+        stderr=log,
+    )
+    for _ in range(120):  # wait up to ~60s for model load + warmup
         if _server_up():
             return
         time.sleep(0.5)
-    raise RuntimeError(
-        f"server did not become healthy; see {log_path} for the cause")
+    raise RuntimeError(f"server did not become healthy; see {log_path} for the cause")
+
+
+def _voice_backend(name, fallback):
+    """Resolve a voice's real backend from the registry; fall back on miss."""
+    try:
+        for v in httpx.get(f"{SERVER_URL}/v1/voices", timeout=2.0).json():
+            if v["id"] == name:
+                return v["backend"]
+    except Exception:
+        pass
+    return fallback
 
 
 def _speak(player, backend, voice, params, text):
-    body = {"input": text, "backend": backend, "voice": voice,
-            "params": params, "stream": True}
-    with httpx.stream("POST", f"{SERVER_URL}/v1/audio/speech",
-                      json=body, timeout=None) as r:
-        if r.status_code != 200:
-            print(f"[server {r.status_code}] {r.read().decode(errors='ignore')}")
-            return
-        for raw in r.iter_bytes():
-            if raw:
-                player.write(raw)
+    body = {"input": text, "backend": backend, "voice": voice, "params": params, "stream": True}
+    try:
+        with httpx.stream("POST", f"{SERVER_URL}/v1/audio/speech", json=body, timeout=None) as r:
+            if r.status_code != 200:
+                print(f"[server {r.status_code}] {r.read().decode(errors='ignore')}")
+                return
+            for raw in r.iter_bytes():
+                if raw:
+                    player.write(raw)
+    except httpx.HTTPError as exc:
+        # A failure inside the engine closes the stream mid-body (status was
+        # already 200). Report it and keep the REPL alive instead of crashing.
+        print(f"[stream error] {exc}; see /tmp/hosaka-server.log")
 
 
 def main():
@@ -54,8 +78,7 @@ def main():
     lib = VoiceLibrary(VOICE_DIR)
     backend = DEFAULT_BACKEND
     voice = DEFAULT_VOICE
-    params = {"exaggeration": 0.5, "cfg_weight": 0.4,
-              "temperature": 0.8, "speed": 1.0}
+    params = {"exaggeration": 0.5, "cfg_weight": 0.4, "temperature": 0.8, "speed": 1.0}
 
     print("hosaka ready. Type to speak; :help for commands. (^D to quit)")
     with PacatPlayer() as player:
@@ -65,7 +88,11 @@ def main():
                 if a.value:
                     _speak(player, backend, voice, params, a.value)
             elif a.kind == "voice":
-                voice, backend = a.value, "kokoro"
+                name, text = a.value
+                voice = name
+                backend = _voice_backend(name, backend)
+                if text:
+                    _speak(player, backend, voice, params, text)
             elif a.kind == "clone":
                 p = Path(a.value)
                 if p.exists():
@@ -84,8 +111,10 @@ def main():
                 for v in httpx.get(f"{SERVER_URL}/v1/voices").json():
                     print(f"  {v['id']:20s} {v['backend']:11s} {v['source']}")
             elif a.kind == "help":
-                print(":voice <name> | :clone <id|path> | :backend k|c | "
-                      ":exag/:cfg/:temp/:speed <f> | :voices | :quit[ --stop]")
+                print(
+                    ":voice <name> | :clone <id|path> | :backend k|c | "
+                    ":exag/:cfg/:temp/:speed <f> | :voices | :quit[ --stop]"
+                )
             elif a.kind == "error":
                 print(f"  {a.value}")
             elif a.kind in ("quit", "quit_stop"):

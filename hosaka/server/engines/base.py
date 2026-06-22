@@ -1,14 +1,14 @@
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator, Protocol
+from typing import Protocol
+
 import numpy as np
 
 
 class Engine(Protocol):
-    def stream(self, text: str, voice: str, params: dict) -> Iterator[np.ndarray]:
-        ...
+    def stream(self, text: str, voice: str, params: dict) -> Iterator[np.ndarray]: ...
 
-    def warmup(self) -> None:
-        ...
+    def warmup(self) -> None: ...
 
 
 @dataclass
