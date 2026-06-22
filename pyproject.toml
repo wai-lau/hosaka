@@ -3,6 +3,10 @@ name = "hosaka"
 version = "0.1.0"
 requires-python = ">=3.12"
 
+[project.scripts]
+hosaka = "hosaka.cli.repl:main"
+hosaka-bake = "hosaka.cli.bake:main"
+
 [tool.pytest.ini_options]
 markers = [
     "gpu: requires a CUDA GPU and downloaded models (deselect with -m 'not gpu')",
