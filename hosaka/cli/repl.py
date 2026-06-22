@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 import httpx
@@ -18,15 +19,18 @@ def _server_up() -> bool:
 
 
 def _spawn_server() -> None:
+    log_path = Path(tempfile.gettempdir()) / "hosaka-server.log"
+    log = open(log_path, "w")     # capture startup errors instead of discarding
     subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "hosaka.server.main:app",
          "--host", "127.0.0.1", "--port", str(SERVER_PORT)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stdout=log, stderr=log)
     for _ in range(120):          # wait up to ~60s for model load + warmup
         if _server_up():
             return
         time.sleep(0.5)
-    raise RuntimeError("server did not become healthy")
+    raise RuntimeError(
+        f"server did not become healthy; see {log_path} for the cause")
 
 
 def _speak(player, backend, voice, params, text):

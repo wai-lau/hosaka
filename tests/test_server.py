@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 from hosaka.server.engines.base import EngineRegistry
 from hosaka.library import VoiceLibrary
@@ -51,6 +52,34 @@ def test_speech_unknown_backend_is_400(tmp_path):
     r = client.post("/v1/audio/speech",
                     json={"input": "hi", "backend": "bogus"})
     assert r.status_code == 400
+
+
+class BoomEngine:
+    def stream(self, text, voice, params):
+        yield np.zeros(100, dtype=np.float32)
+        raise RuntimeError("engine boom")
+
+    def warmup(self):
+        pass
+
+
+def test_speech_engine_error_is_not_silent(tmp_path):
+    # A mid-stream engine failure must surface, not return a clean truncated 200.
+    reg = EngineRegistry(kokoro=BoomEngine(), chatterbox=BoomEngine())
+    lib = VoiceLibrary(tmp_path / "voices")
+    client = TestClient(create_app(reg, lib, do_warmup=False))
+    with pytest.raises(RuntimeError, match="engine boom"):
+        client.post("/v1/audio/speech",
+                    json={"input": "hi", "backend": "kokoro"})
+
+
+def test_lock_released_after_request(tmp_path):
+    # After a normal request completes, the GPU slot must be free for the next.
+    client, _ = _client(tmp_path)
+    for _ in range(3):
+        r = client.post("/v1/audio/speech",
+                        json={"input": "Hello.", "backend": "kokoro"})
+        assert r.status_code == 200
 
 
 def test_shutdown_route_exists(tmp_path):

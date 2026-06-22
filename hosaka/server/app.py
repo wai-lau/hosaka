@@ -64,15 +64,20 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary,
         except KeyError:
             raise HTTPException(status_code=400,
                                 detail=f"unknown backend: {req.backend}")
+        # Acquire the single-GPU slot here, atomically with the busy check
+        # (no await between them), so a second concurrent request reliably
+        # gets 503 instead of racing. The lock is held until gen() finishes,
+        # including the worker thread, then released in gen()'s finally.
         if gpu_lock.locked():
             raise HTTPException(status_code=503, detail="busy")
+        await gpu_lock.acquire()
 
         params = clamp_params(req.params).model_dump()
         fragments = split_fragments(req.input)
 
         async def gen():
-            async with gpu_lock:
-                loop = asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
+            try:
                 for frag in fragments:
                     queue: asyncio.Queue = asyncio.Queue()
 
@@ -81,15 +86,27 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary,
                             for chunk in engine.stream(fragment, req.voice, params):
                                 loop.call_soon_threadsafe(
                                     queue.put_nowait, chunk.tobytes())
+                        except BaseException as exc:   # surface engine failures
+                            loop.call_soon_threadsafe(queue.put_nowait, exc)
                         finally:
                             loop.call_soon_threadsafe(queue.put_nowait, None)
 
-                    loop.run_in_executor(None, produce)
-                    while True:
-                        item = await queue.get()
-                        if item is None:
-                            break
-                        yield item
+                    fut = loop.run_in_executor(None, produce)
+                    try:
+                        while True:
+                            item = await queue.get()
+                            if item is None:
+                                break
+                            if isinstance(item, BaseException):
+                                raise item
+                            yield item
+                    finally:
+                        # Hold the GPU slot until the worker thread has actually
+                        # finished — even on client disconnect — so the single-GPU
+                        # serialization invariant holds and no thread is orphaned.
+                        await asyncio.shield(fut)
+            finally:
+                gpu_lock.release()
 
         return StreamingResponse(gen(), media_type="application/octet-stream",
                                  headers={"X-Accel-Buffering": "no",
