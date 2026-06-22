@@ -103,6 +103,50 @@ def test_speech_engine_error_is_not_silent(tmp_path):
         client.post("/v1/audio/speech", json={"input": "hi", "backend": "kokoro"})
 
 
+class CudaBoomEngine:
+    def stream(self, text, voice, params):
+        yield np.zeros(100, dtype=np.float32)
+        raise RuntimeError("CUDA error: device-side assert triggered")
+
+    def warmup(self):
+        pass
+
+
+def test_fatal_cuda_error_triggers_shutdown(tmp_path, monkeypatch):
+    # A device-side assert poisons the GPU context; the server must exit so the
+    # next launch respawns clean instead of failing every later request.
+    import hosaka.server.app as appmod
+
+    hits = {}
+    monkeypatch.setattr(appmod, "_do_shutdown", lambda: hits.setdefault("hit", True))
+    reg = EngineRegistry(kokoro=CudaBoomEngine(), chatterbox=CudaBoomEngine())
+    lib = VoiceLibrary(tmp_path / "voices")
+    client = TestClient(create_app(reg, lib, do_warmup=False))
+    with pytest.raises(RuntimeError, match="device-side assert"):
+        client.post(
+            "/v1/audio/speech",
+            json={"input": "hi", "backend": "kokoro", "voice": "af_heart"},
+        )
+    assert hits.get("hit")
+
+
+def test_ordinary_engine_error_does_not_shutdown(tmp_path, monkeypatch):
+    # A non-CUDA failure must surface but leave the server running.
+    import hosaka.server.app as appmod
+
+    hits = {}
+    monkeypatch.setattr(appmod, "_do_shutdown", lambda: hits.setdefault("hit", True))
+    reg = EngineRegistry(kokoro=BoomEngine(), chatterbox=BoomEngine())
+    lib = VoiceLibrary(tmp_path / "voices")
+    client = TestClient(create_app(reg, lib, do_warmup=False))
+    with pytest.raises(RuntimeError, match="engine boom"):
+        client.post(
+            "/v1/audio/speech",
+            json={"input": "hi", "backend": "kokoro", "voice": "af_heart"},
+        )
+    assert not hits.get("hit")
+
+
 def test_lock_released_after_request(tmp_path):
     # After a normal request completes, the GPU slot must be free for the next.
     client, _ = _client(tmp_path)

@@ -21,3 +21,24 @@ def test_long_first_clause_breaks_on_word_boundary():
 
 def test_empty_text_returns_empty_list():
     assert split_fragments("   ") == []
+
+
+def test_every_fragment_capped_for_long_run_on_sentence():
+    # One long comma-spliced sentence (single period) must not produce any
+    # fragment over max_chars -- that is what blew past Chatterbox's limit.
+    text = (
+        "the whole graph for her career and finances, her health "
+        "and gender, her family and chosen kin, her crafting and "
+        "hobbies, her technical work, her history, and her own "
+        "introspection and worldview, all at once and in detail."
+    )
+    out = split_fragments(text, max_chars=120)
+    assert all(len(f) <= 120 for f in out)
+    assert len(out) > 1
+
+
+def test_long_non_first_sentence_is_also_capped():
+    text = "Hi. " + "word " * 100  # second sentence ~500 chars
+    out = split_fragments(text.strip(), max_chars=120)
+    assert out[0] == "Hi."
+    assert all(len(f) <= 120 for f in out)

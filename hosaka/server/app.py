@@ -36,6 +36,16 @@ def _do_shutdown():
     os.kill(os.getpid(), signal.SIGTERM)
 
 
+def _is_fatal_cuda(exc: BaseException) -> bool:
+    """A device-side assert / CUDA error corrupts the context process-wide.
+
+    Once it fires, no further GPU work can succeed until the process restarts,
+    so the only safe response is to exit and let the next launch respawn clean.
+    """
+    s = str(exc)
+    return "CUDA error" in s or "device-side assert" in s
+
+
 def create_app(registry: EngineRegistry, library: VoiceLibrary, do_warmup: bool = True) -> FastAPI:
 
     @asynccontextmanager
@@ -116,6 +126,10 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary, do_warmup: bool 
                             if item is None:
                                 break
                             if isinstance(item, BaseException):
+                                if _is_fatal_cuda(item):
+                                    # GPU context is dead for the whole process;
+                                    # exit so the next launch starts clean.
+                                    _do_shutdown()
                                 raise item
                             yield item
                     finally:
