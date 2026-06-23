@@ -9,15 +9,21 @@ clone voices; design new voices from a text description.
 ```mermaid
 flowchart LR
     repl["REPL client<br/>(hosaka.cli.repl)"]
-    server["FastAPI server<br/>(hosaka.server)"]
+    web["web client<br/>(hosaka/web, /app/)"]
+    proxy["exec-fn proxy<br/>(wai-lau.net/hosaka,<br/>SSH tunnel + cookie auth)"]
+    server["FastAPI server<br/>(hosaka.server, 127.0.0.1:8123)"]
     kokoro["KokoroEngine<br/>(presets, realtime)"]
     chatter["ChatterboxEngine<br/>(cloning, quality)"]
-    speakers(["speakers"])
+    win(["Windows speakers"])
+    linux(["native-Linux speakers"])
     bake["bake CLI<br/>(hosaka.cli.bake, isolated venv)"]
     library[("voice library<br/>~/.local/share/hosaka/voices")]
 
-    repl <-->|"HTTP (raw PCM, 24kHz mono, float32 LE)"| server
-    repl -->|"pacat (WSLg PulseAudio)"| speakers
+    repl <-->|"HTTP POST /v1/audio/speech<br/>(raw PCM, 24kHz mono, float32 LE)"| server
+    web <-->|"WS /v1/audio/stream"| proxy
+    proxy <-->|"WS over SSH tunnel"| server
+    repl -->|"ffplay.exe (WSLg path)"| win
+    repl -.->|"pacat (native-Linux path)"| linux
     server --> kokoro
     server --> chatter
     bake -->|"Parler → seed.wav"| library
