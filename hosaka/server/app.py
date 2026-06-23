@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from hosaka.chunking import split_fragments
-from hosaka.config import LLM_MODEL
+from hosaka.config import LLM_MODEL, MAX_QUEUE
 from hosaka.library import VoiceLibrary
 from hosaka.schemas import SpeechRequest, VoiceInfo, clamp_params
 from hosaka.server.engines.base import EngineRegistry
@@ -58,7 +58,53 @@ def _is_fatal_cuda(exc: BaseException) -> bool:
     return "CUDA error" in s or "device-side assert" in s
 
 
-def create_app(registry: EngineRegistry, library: VoiceLibrary, do_warmup: bool = True) -> FastAPI:
+class _GpuQueue:
+    """Bounded FIFO admission in front of the single GPU slot.
+
+    Replaces the old "503 the moment the slot is busy" with a wait queue:
+    concurrent callers line up on the semaphore (asyncio wakes waiters in FIFO
+    order) instead of being rejected outright. The queue is *bounded* so a
+    backlog cannot grow unbounded memory / unbounded wait -- past the cap we
+    still return 503.
+
+    ``try_admit`` is deliberately synchronous: the cap check and the counter
+    bump are one atomic step (no ``await`` between them), so two concurrent
+    requests cannot both slip past a nearly-full cap. Only *after* admission do
+    we ``await`` the actual GPU slot. The slot itself is still a Semaphore(1),
+    so the single-GPU serialization invariant is unchanged -- exactly one
+    request touches the GPU at a time.
+    """
+
+    def __init__(self, max_depth: int):
+        self._max = max_depth
+        self._slot = asyncio.Semaphore(1)
+        self._depth = 0  # admitted = waiting + the one currently running
+
+    def try_admit(self) -> bool:
+        if self._depth >= self._max:
+            return False
+        self._depth += 1
+        return True
+
+    def undo_admit(self) -> None:
+        # Give back a reserved spot when we never reach release() (e.g. the
+        # caller is cancelled while still waiting for the slot).
+        self._depth -= 1
+
+    async def acquire(self) -> None:
+        await self._slot.acquire()
+
+    def release(self) -> None:
+        self._slot.release()
+        self._depth -= 1
+
+
+def create_app(
+    registry: EngineRegistry,
+    library: VoiceLibrary,
+    do_warmup: bool = True,
+    max_queue: int = MAX_QUEUE,
+) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -71,7 +117,7 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary, do_warmup: bool 
     app.state.registry = registry
     app.state.library = library
 
-    gpu_lock = asyncio.Semaphore(1)
+    gpu_queue = _GpuQueue(max_queue)
 
     @app.get("/health")
     def health():
@@ -113,13 +159,19 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary, do_warmup: bool 
             # chatterbox: "" is the model's own default voice; anything else
             # must resolve to a reference clip in the library.
             raise HTTPException(status_code=400, detail=f"unknown chatterbox voice: {req.voice}")
-        # Acquire the single-GPU slot here, atomically with the busy check
-        # (no await between them), so a second concurrent request reliably
-        # gets 503 instead of racing. The lock is held until gen() finishes,
-        # including the worker thread, then released in gen()'s finally.
-        if gpu_lock.locked():
+        # Admit to the bounded queue, then wait our turn for the single GPU
+        # slot. try_admit is synchronous (atomic cap-check + reserve, no await
+        # between them) so concurrent callers can't both slip past a full cap;
+        # only past the cap do we 503. The slot is held until gen() finishes --
+        # including its worker thread -- then released in gen()'s finally. If
+        # we're cancelled while still waiting for the slot, undo the admission.
+        if not gpu_queue.try_admit():
             raise HTTPException(status_code=503, detail="busy")
-        await gpu_lock.acquire()
+        try:
+            await gpu_queue.acquire()
+        except BaseException:
+            gpu_queue.undo_admit()
+            raise
 
         params = clamp_params(req.params).model_dump()
         fragments = split_fragments(req.input)
@@ -158,7 +210,7 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary, do_warmup: bool 
                         # serialization invariant holds and no thread is orphaned.
                         await asyncio.shield(fut)
             finally:
-                gpu_lock.release()
+                gpu_queue.release()
 
         return StreamingResponse(
             gen(),

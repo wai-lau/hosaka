@@ -50,10 +50,12 @@ replcmd, audio, server/app with a FakeEngine) run in `.venv-dev`.
 - Audio is float32 LE PCM, 24 kHz, mono, everywhere. Resample at the engine
   boundary if a model differs.
 - No Unicode emoji anywhere (code, comments, commits, docs). Plain text only.
-- The server serializes GPU work with `asyncio.Semaphore(1)`; the busy check +
-  acquire must stay atomic (no `await` between them) and the executor future
-  must be held until done. See `hosaka/server/app.py` — do not reintroduce an
-  untracked `run_in_executor` future.
+- The server serializes GPU work with `asyncio.Semaphore(1)` behind a bounded
+  FIFO wait queue (`_GpuQueue`, cap `MAX_QUEUE`): exactly one request touches the
+  GPU at a time, the rest line up, and only a full queue returns `503`. The cap
+  check + reserve (`try_admit`) must stay atomic (no `await` between them) and the
+  executor future must be held until done. See `hosaka/server/app.py` — do not
+  reintroduce an untracked `run_in_executor` future.
 - Personal voice data lives in `~/.local/share/hosaka/voices` (untracked).
   Only the couple of sample seeds under `hosaka/sample_voices/` are committed.
 

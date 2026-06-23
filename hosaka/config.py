@@ -8,6 +8,14 @@ SERVER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 DEFAULT_BACKEND = "kokoro"
 DEFAULT_VOICE = "af_heart"
 
+# Max requests admitted at once (the one running on the GPU + those waiting in
+# line). The GPU still serves strictly one at a time; this only bounds how deep
+# the wait queue can grow before new requests are turned away with 503, so a
+# backlog can't pile up unbounded memory / unbounded wait. Kokoro drains fast
+# (RTF ~0.04) so a modest depth feels concurrent; Chatterbox (RTF ~1.0) does
+# not, so a deep queue there just means long waits.
+MAX_QUEUE = 16
+
 # Playback gain applied client-side before pacat, clipped to [-1, 1].
 # Default 1.0 (off): WSLg's RDP audio bridge distorts HOT signals (adds static)
 # because amplifying here happens BEFORE the lossy RDP hop. For more loudness on

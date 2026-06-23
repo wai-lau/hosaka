@@ -1,3 +1,7 @@
+import asyncio
+import threading
+
+import httpx
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -174,3 +178,86 @@ def test_shutdown_route_exists(tmp_path):
     r = client.post("/shutdown")
     assert r.status_code == 200
     assert called.get("hit")
+
+
+class GatedEngine:
+    """Engine whose stream() blocks until released, so a test can pin the GPU
+    slot and observe how a concurrent request behaves (queued vs rejected).
+
+    stream() runs in the server's worker thread, so the gate is a threading
+    primitive; ``entered`` is set the moment a stream starts running."""
+
+    def __init__(self):
+        self.entered = threading.Event()
+        self.gate = threading.Event()
+
+    def stream(self, text, voice, params):
+        self.entered.set()
+        self.gate.wait(5)
+        yield np.zeros(1200, dtype=np.float32)
+
+    def warmup(self):
+        pass
+
+
+KOKORO_REQ = {"input": "hi", "backend": "kokoro", "voice": "af_heart"}
+
+
+async def _wait(flag: threading.Event):
+    # Bridge a threading.Event into the event loop without blocking it.
+    while not flag.is_set():
+        await asyncio.sleep(0.01)
+
+
+def _async_client(app):
+    # Drive the ASGI app in-process over one event loop, so concurrent requests
+    # share the app's asyncio.Semaphore correctly (a single sync TestClient
+    # across threads deadlocks once a request actually awaits the slot).
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+
+
+def test_concurrent_request_queues_instead_of_503(tmp_path):
+    # While one request holds the GPU slot, a second must WAIT in line and then
+    # succeed -- not get rejected with 503 (the old single-slot behavior).
+    eng = GatedEngine()
+    reg = EngineRegistry(kokoro=eng, chatterbox=eng)
+    app = create_app(reg, VoiceLibrary(tmp_path / "v"), do_warmup=False)
+
+    async def scenario():
+        async with _async_client(app) as ac:
+            a = asyncio.create_task(ac.post("/v1/audio/speech", json=KOKORO_REQ))
+            await _wait(eng.entered)  # A is inside the engine, holding the slot
+            b = asyncio.create_task(ac.post("/v1/audio/speech", json=KOKORO_REQ))
+            await asyncio.sleep(0.2)
+            assert not b.done()  # B is queued (waiting), not already rejected
+
+            eng.gate.set()
+            ra, rb = await asyncio.gather(a, b)
+            assert ra.status_code == 200
+            assert rb.status_code == 200
+
+    asyncio.run(scenario())
+
+
+def test_queue_cap_returns_503_when_full(tmp_path):
+    # The queue is bounded: once admitted (waiting + running) hits the cap, the
+    # next request is rejected with 503 instead of growing the backlog forever.
+    eng = GatedEngine()
+    reg = EngineRegistry(kokoro=eng, chatterbox=eng)
+    app = create_app(reg, VoiceLibrary(tmp_path / "v"), do_warmup=False, max_queue=2)
+
+    async def scenario():
+        async with _async_client(app) as ac:
+            a = asyncio.create_task(ac.post("/v1/audio/speech", json=KOKORO_REQ))  # runs
+            await _wait(eng.entered)
+            b = asyncio.create_task(ac.post("/v1/audio/speech", json=KOKORO_REQ))  # queued
+            await asyncio.sleep(0.2)  # let B reach the slot (depth 2 == cap)
+            rc = await ac.post("/v1/audio/speech", json=KOKORO_REQ)  # over cap -> 503
+            assert rc.status_code == 503
+
+            eng.gate.set()
+            ra, rb = await asyncio.gather(a, b)
+            assert ra.status_code == 200
+            assert rb.status_code == 200
+
+    asyncio.run(scenario())

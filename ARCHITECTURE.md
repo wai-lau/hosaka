@@ -70,8 +70,11 @@ Turbo is not in the streaming fork, so it needs separate integration.
 `POST /v1/audio/speech` →
 
 1. Resolve the backend (`400` if unknown).
-2. Acquire the single-GPU slot. The busy check and acquire are atomic (no `await`
-   between them), so a second concurrent request gets `503` rather than racing.
+2. Admit to the bounded request queue, then wait for the single-GPU slot.
+   Concurrent callers line up FIFO and are served one at a time; the cap check +
+   reserve are atomic (no `await` between them), so they can't both slip past a
+   full queue. Only when the queue is full (depth `MAX_QUEUE`) does a request get
+   `503`.
 3. Split `input` into sentence fragments (`hosaka/chunking.py`). The first
    fragment is kept short — this is the real low-latency lever, more than any
    model's internal "streaming" flag.
