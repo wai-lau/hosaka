@@ -1,7 +1,7 @@
-// Minimal hosaka web client: open a WebSocket, send a line of text, play the
-// streamed float32 PCM through an AudioWorklet. The audio contract is 24 kHz
-// mono float32 LE everywhere, so the AudioContext is pinned to 24 kHz and
-// binary frames are fed to the worklet verbatim.
+// hosaka web client: WebSocket -> AudioWorklet PCM playback (24 kHz mono
+// float32). Voices come from GET /v1/voices (each carries its backend +
+// description); the synth knobs are sent as native param values; volume is a
+// client-side gain applied in the worklet.
 const $ = (id) => document.getElementById(id);
 const setStatus = (s) => {
   $("status").textContent = s;
@@ -10,12 +10,81 @@ const setStatus = (s) => {
 let ctx = null; // AudioContext
 let node = null; // AudioWorkletNode (pcm-player)
 let ws = null; // WebSocket
+let gain = 1.0; // client playback gain
+
+const PARAM_IDS = ["exaggeration", "cfg_weight", "temperature", "speed"];
+
+async function loadVoices() {
+  const sel = $("voice");
+  let voices;
+  try {
+    voices = await (await fetch("/v1/voices")).json();
+  } catch {
+    sel.innerHTML = '<option value="af_heart">af_heart</option>';
+    return;
+  }
+  // group options by backend
+  const groups = {};
+  for (const v of voices) (groups[v.backend] ||= []).push(v);
+  const labels = { kokoro: "kokoro (realtime)", chatterbox: "chatterbox (clone)" };
+  sel.innerHTML = "";
+  for (const backend of Object.keys(groups)) {
+    const og = document.createElement("optgroup");
+    og.label = labels[backend] || backend;
+    for (const v of groups[backend]) {
+      const o = document.createElement("option");
+      o.value = v.id;
+      o.dataset.backend = v.backend;
+      o.textContent = v.description ? `${v.id} - ${v.description}` : v.id;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
+  }
+  sel.addEventListener("change", reflectBackend);
+  reflectBackend();
+}
+
+function selectedBackend() {
+  const o = $("voice").selectedOptions[0];
+  return o ? o.dataset.backend : "kokoro";
+}
+
+// Dim the chatterbox-only knobs when a kokoro voice is selected (they do
+// nothing there -- kokoro only honors speed).
+function reflectBackend() {
+  $("cb-knobs").classList.toggle("off", selectedBackend() !== "chatterbox");
+}
+
+function wireKnobs() {
+  for (const id of [...PARAM_IDS, "volume"]) {
+    const el = $(id);
+    const out = $(id + "-val");
+    const show = () => {
+      out.textContent = parseFloat(el.value).toFixed(2);
+    };
+    el.addEventListener("input", () => {
+      show();
+      if (id === "volume") {
+        gain = parseFloat(el.value);
+        if (node) node.port.postMessage({ gain });
+      }
+    });
+    show();
+  }
+}
+
+function params() {
+  const p = {};
+  for (const id of PARAM_IDS) p[id] = parseFloat($(id).value);
+  return p;
+}
 
 async function ensureAudio() {
   if (ctx) return;
   ctx = new AudioContext({ sampleRate: 24000 });
   await ctx.audioWorklet.addModule("/app/pcm-player.js");
   node = new AudioWorkletNode(ctx, "pcm-player");
+  node.port.postMessage({ gain });
   node.connect(ctx.destination);
 }
 
@@ -54,13 +123,16 @@ async function speak() {
   ws.send(
     JSON.stringify({
       input: $("text").value,
-      backend: $("backend").value,
-      voice: $("voice").value.trim() || "af_heart",
+      backend: selectedBackend(),
+      voice: $("voice").value,
+      params: params(),
     }),
   );
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  wireKnobs();
+  loadVoices();
   $("speak").addEventListener("click", () => {
     speak().catch((err) => setStatus("error: " + err.message));
   });
