@@ -6,18 +6,22 @@ clone voices; design new voices from a text description.
 
 ## Shape
 
-```
-                    HTTP (raw PCM, 24kHz mono, float32 LE)
-  REPL client  ───────────────────────────────────────────►  FastAPI server
-  (hosaka.cli.repl)                                            (hosaka.server)
-       │  ▲                                                      │
-       │  │ pacat (WSLg PulseAudio)                              ├─ KokoroEngine   (presets, realtime)
-       ▼  │                                                      └─ ChatterboxEngine (cloning, quality)
-   speakers                                                          ▲
-                                                                     │ reference WAV
-  bake CLI (hosaka.cli.bake, isolated venv) ── Parler ── seed.wav ──►│
-                                                          voice library
-                                                   (~/.local/share/hosaka/voices)
+```mermaid
+flowchart LR
+    repl["REPL client<br/>(hosaka.cli.repl)"]
+    server["FastAPI server<br/>(hosaka.server)"]
+    kokoro["KokoroEngine<br/>(presets, realtime)"]
+    chatter["ChatterboxEngine<br/>(cloning, quality)"]
+    speakers(["speakers"])
+    bake["bake CLI<br/>(hosaka.cli.bake, isolated venv)"]
+    library[("voice library<br/>~/.local/share/hosaka/voices")]
+
+    repl <-->|"HTTP (raw PCM, 24kHz mono, float32 LE)"| server
+    repl -->|"pacat (WSLg PulseAudio)"| speakers
+    server --> kokoro
+    server --> chatter
+    bake -->|"Parler → seed.wav"| library
+    library -->|"reference WAV"| chatter
 ```
 
 Three deployable units, each with one clear responsibility:
