@@ -47,7 +47,7 @@ No single open model does presets + cloning + tuning + style-prompt AND hits
 | Engine | Role | Why | Latency on this box |
 |--------|------|-----|---------------------|
 | **Kokoro-82M** | presets + the realtime path | tiny, fast, ~28 English voices | ~60ms to first audio |
-| **Chatterbox** (original, `davidbrowne17/chatterbox-streaming`) | cloning + tuning | best open zero-shot clone, keeps `exaggeration`/`cfg_weight`/`temperature` | ~2.3s (see below) |
+| **Chatterbox** (original, `davidbrowne17/chatterbox-streaming`) | cloning + tuning | best open zero-shot clone, keeps `exaggeration`/`cfg_weight`/`temperature` | RTF ~0.8; ~4s to first audio (see below) |
 | **Parler-TTS Mini** (offline) | style-prompt voice authoring | only model that designs a voice from words | irrelevant (offline) |
 
 Both Kokoro and Chatterbox stay pinned in VRAM (~5-6 GB of 16).
@@ -65,15 +65,22 @@ the path is always a fast engine.
 Benchmarked on the 5070 Ti + WSL2:
 
 - **Kokoro = realtime.** RTF ~0.04, ~60ms first chunk. The live path.
-- **Chatterbox = quality mode, NOT realtime.** The model runs at RTF ~1.0 with a
-  ~2s fixed per-call overhead, so per-chunk streaming underruns and stutters.
-  `ChatterboxEngine.stream()` therefore generates each fragment **in full**, then
-  hands back the whole waveform. The server's fragment loop overlaps a fragment's
-  generation with the previous fragment's playback, so audio stays smooth at the
-  cost of ~2-3s before the first cloned line is heard. Full knob set retained.
+- **Chatterbox = quality mode.** Measured RTF **~0.8** (0.74-0.92 across 0.8-13s
+  fragments, T3 token LLM ~89% of it, small ~0.4s per-call overhead) — i.e.
+  *faster than realtime*, just not sub-second. The model delivers each fragment
+  **whole** (`ChatterboxEngine.stream()` generates in full, then hands back the
+  waveform); per-chunk streaming *within* a fragment underruns and is avoided on
+  purpose. The latency that remains is the first fragment's full generation, so
+  the chunker **ramps** the fragment cap (see Request path step 3): a short first
+  fragment reaches first audio in ~3-4s, and because RTF < 1 every later fragment
+  finishes generating before the previous one finishes playing, so playback stays
+  gapless. Full knob set retained. (An earlier RTF ~1.0 / "~2s overhead" reading
+  was a one-off GPU degrading toward a CUDA crash, not normal operation.)
 
-Fast realtime cloning (Chatterbox Turbo or XTTS-v2) is a deferred follow-up —
-Turbo is not in the streaming fork, so it needs separate integration.
+Fast realtime cloning is a deferred follow-up: **Chatterbox-Turbo** (now on HF,
+distilled 1-step vocoder, 350M, ~RTF 0.5) or XTTS-v2 — a model swap with quality
+re-validation, not a kernel tweak (bf16 does not help here: T3 is overhead-bound,
+not flop-bound, and a full bf16 cast crashes the s3tokenizer FFT).
 
 ## Request path
 
@@ -85,9 +92,14 @@ Turbo is not in the streaming fork, so it needs separate integration.
    reserve are atomic (no `await` between them), so they can't both slip past a
    full queue. Only when the queue is full (depth `MAX_QUEUE`) does a request get
    `503`.
-3. Split `input` into sentence fragments (`hosaka/chunking.py`). The first
-   fragment is kept short — this is the real low-latency lever, more than any
-   model's internal "streaming" flag.
+3. Apply the custom-pronunciation lexicon (`hosaka/lexicon.py`), then split
+   `input` into fragments (`hosaka/chunking.py`). For the Chatterbox path the
+   cap **ramps** — fragment `k` is capped at `min(CHATTERBOX_MAX_CHARS,
+   ceil(FIRST_FRAGMENT_MAX_CHARS * FRAGMENT_GROWTH**k))` — so the first fragment
+   is small (fast first audio) and each later one stays inside the gapless budget
+   at RTF ~0.8. This fragment-size schedule, not any model "streaming" flag, is
+   the real low-latency lever. Kokoro keeps the plain sentence split (it streams
+   sub-fragment audio itself).
 4. For each fragment: run the blocking `engine.stream()` in a worker thread
    (`run_in_executor`), pushing PCM bytes (or an exception) into an
    `asyncio.Queue`; an async generator drains the queue into a `StreamingResponse`.

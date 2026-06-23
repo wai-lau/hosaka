@@ -43,10 +43,16 @@ replcmd, audio, server/app with a FakeEngine) run in `.venv-dev`.
   adds static to in-WSL playback, so on WSLg audio plays on the Windows side
   (`ffplay.exe` via ffmpeg, or a buffered `SoundPlayer` fallback); `pacat` is the
   native-Linux path. See `make_player` in `hosaka/audio.py`.
-- **Chatterbox cloning being ~2-3s is INTENTIONAL** (quality mode — the card
-  can't stream this model under 1s; see ARCHITECTURE.md). Do not "optimize" it
-  into per-chunk streaming; that reintroduces stutter. Realtime is the Kokoro
-  preset path.
+- **Chatterbox is quality mode, ~4s to first audio — by design.** Measured RTF
+  ~0.8 (faster than realtime; the card just can't stream it sub-second). It
+  delivers each fragment **whole**; do not "optimize" it into per-chunk streaming
+  *within* a fragment — that reintroduces stutter. Fast first audio comes from
+  the fragment-cap **ramp** (`FIRST_FRAGMENT_MAX_CHARS` / `FRAGMENT_GROWTH` in
+  `config.py`, applied in `_fragments_for`), tuned to stay gapless at RTF ~0.8;
+  see ARCHITECTURE.md. Realtime is the Kokoro preset path. Don't bother with bf16
+  (T3 is overhead-bound, no gain; full cast crashes the s3tokenizer FFT). A lone
+  RTF ~2.0 reading means the GPU is degrading toward a crash — re-measure after a
+  clean restart, don't "fix" the model.
 
 ## Conventions
 

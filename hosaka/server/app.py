@@ -11,7 +11,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from hosaka.chunking import split_fragments
-from hosaka.config import LEXICON_PATH, LLM_MODEL, MAX_QUEUE
+from hosaka.config import (
+    CHATTERBOX_MAX_CHARS,
+    FIRST_FRAGMENT_MAX_CHARS,
+    FRAGMENT_GROWTH,
+    LEXICON_PATH,
+    LLM_MODEL,
+    MAX_QUEUE,
+)
 from hosaka.lexicon import Lexicon
 from hosaka.library import VoiceLibrary
 from hosaka.schemas import SpeechRequest, VoiceInfo, clamp_params
@@ -84,6 +91,22 @@ def _resolve(registry: EngineRegistry, library: VoiceLibrary, backend: str, voic
         # resolve to a reference clip in the library.
         return None, f"unknown chatterbox voice: {voice}"
     return engine, None
+
+
+def _fragments_for(backend: str, text: str) -> list[str]:
+    """Split text into synth fragments. The Chatterbox quality path delivers
+    each fragment whole at RTF ~0.8, so it uses the ramping cap -- a small
+    first fragment for fast first-audio, growing to stay gapless (see
+    chunking.split_fragments). The realtime Kokoro path streams sub-fragment
+    audio itself, so it keeps the plain sentence-based split."""
+    if backend == "chatterbox":
+        return split_fragments(
+            text,
+            first_max_chars=FIRST_FRAGMENT_MAX_CHARS,
+            max_chars=CHATTERBOX_MAX_CHARS,
+            growth=FRAGMENT_GROWTH,
+        )
+    return split_fragments(text)
 
 
 async def _pcm_frames(engine, voice, params, fragments, gpu_queue):
@@ -241,7 +264,7 @@ def create_app(
 
         await _admit_or(busy)
         params = clamp_params(req.params).model_dump()
-        fragments = split_fragments(lexicon.apply(req.input))
+        fragments = _fragments_for(req.backend, lexicon.apply(req.input))
         return StreamingResponse(
             _pcm_frames(engine, req.voice, params, fragments, gpu_queue),
             media_type="application/octet-stream",
@@ -278,7 +301,7 @@ def create_app(
                 if not await _admit_or(busy):
                     continue
                 params = clamp_params(req.params).model_dump()
-                fragments = split_fragments(lexicon.apply(req.input))
+                fragments = _fragments_for(req.backend, lexicon.apply(req.input))
                 await ws.send_json({"type": "start"})
                 async for chunk in _pcm_frames(engine, req.voice, params, fragments, gpu_queue):
                     await ws.send_bytes(chunk)

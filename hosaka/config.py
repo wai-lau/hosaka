@@ -35,6 +35,19 @@ PLAYBACK_LEAD_SILENCE_MS = 200
 # over per-fragment synth jitter at Chatterbox's RTF ~1.
 PIPELINE_LEAD_MS = 1500
 
+# Chatterbox fragment ramp (quality path only). The model delivers each
+# fragment whole and runs at measured RTF ~0.8 (faster than realtime), so to
+# get fast first-audio without a mid-utterance gap the fragment cap RAMPS:
+# fragment k is capped at min(CHATTERBOX_MAX_CHARS, ceil(FIRST * GROWTH**k)).
+# A small first fragment -> ~3-4s to first sound (vs the full ~10s gen of one
+# long fragment); GROWTH 1.1 keeps each later fragment inside the gapless
+# budget at RTF ~0.8 (see chunking.split_fragments / ARCHITECTURE.md). Raise
+# FIRST for fewer seams + slower start, lower GROWTH for more gap safety under
+# GPU jitter. Set FRAGMENT_GROWTH = None to disable the ramp.
+FIRST_FRAGMENT_MAX_CHARS = 64
+FRAGMENT_GROWTH = 1.1
+CHATTERBOX_MAX_CHARS = 280  # hard per-fragment cap (token-limit safety)
+
 # REPL knobs are entered on a uniform 0-100 scale. 50 is the DEFAULT (neutral)
 # value for each knob, 0 and 100 the extremes -- so the map is piecewise linear,
 # anchored at the default rather than the range midpoint. (min, default, max);

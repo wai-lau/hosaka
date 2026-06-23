@@ -74,3 +74,65 @@ def test_long_non_first_sentence_is_also_capped():
     out = split_fragments(text.strip(), max_chars=120)
     assert out[0] == "Hi."
     assert all(len(f) <= 120 for f in out)
+
+
+def _schedule_underrun(sizes, rtf=0.80, overhead=0.45, cr=16.0, lead_s=1.5):
+    """Worst seconds a fragment is delivered LATE for gapless playback, given
+    Chatterbox delivers each fragment whole at the measured RTF ~0.8. >0 = gap.
+    Encodes the design guarantee behind the ramp (see config.FRAGMENT_GROWTH)."""
+    durs = [max(c / cr, 0.2) for c in sizes]
+    gens = [rtf * d + overhead for d in durs]
+    deliver, t = [], 0.0
+    for g in gens:
+        t += g
+        deliver.append(t)
+    cum, t_start = 0.0, deliver[-1]
+    for k, d in enumerate(durs):
+        cum += d
+        if cum >= lead_s:  # playback starts when the lead buffer fills
+            t_start = deliver[k]
+            break
+    worst, need = -1e9, t_start
+    for k in range(len(durs)):
+        worst = max(worst, deliver[k] - need)
+        need += durs[k]
+    return worst
+
+
+def test_ramp_first_fragment_is_small_for_fast_first_audio():
+    out = split_fragments("word " * 120, first_max_chars=64, growth=1.1)
+    assert len(out[0]) <= 64
+    assert len(out) > 3  # a long input ramps into several fragments
+
+
+def test_ramp_keeps_every_fragment_within_max():
+    out = split_fragments("word " * 200, first_max_chars=64, max_chars=280, growth=1.1)
+    assert all(len(f) <= 280 for f in out)
+
+
+def test_ramp_caps_grow_after_the_first():
+    out = split_fragments("word " * 200, first_max_chars=64, growth=1.1)
+    assert max(len(f) for f in out) > len(out[0])
+
+
+def test_ramp_preserves_all_words():
+    t = "Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu."
+    out = split_fragments(t, first_max_chars=32, growth=1.1)
+    # Fragments are spoken separately; no word may be dropped or split mid-word.
+    assert [w for frag in out for w in frag.split()] == t.split()
+
+
+def test_ramp_short_input_stays_single_fragment():
+    # Inputs under first_max_chars are untouched -- no needless seams.
+    out = split_fragments("This is a short prompt.", first_max_chars=64, growth=1.1)
+    assert out == ["This is a short prompt."]
+
+
+def test_ramp_schedule_gapless_where_legacy_gaps():
+    # A long run-on sentence: legacy leaves a big mid-utterance fragment that
+    # arrives far too late; the ramp keeps every fragment inside the budget.
+    t = ("word " * 120).strip()  # ~600 chars, one sentence
+    ramp = [len(f) for f in split_fragments(t, first_max_chars=64, max_chars=280, growth=1.1)]
+    legacy = [len(f) for f in split_fragments(t, first_max_chars=64)]
+    assert _schedule_underrun(ramp) < 1.0  # effectively gapless
+    assert _schedule_underrun(legacy) > 3.0  # legacy underruns hard
