@@ -86,6 +86,13 @@ Turbo is not in the streaming fork, so it needs separate integration.
    serialization invariant and surfacing engine errors instead of returning a
    silently truncated `200`.
 
+`WS /v1/audio/stream` is the persistent-session variant for a web client: each
+JSON message (`SpeechRequest` shape) is one utterance; the server replies with a
+`{"type":"start"}` marker, raw PCM binary frames, then `{"type":"end"}`. A
+malformed / unknown-voice / over-cap request gets `{"type":"error"}` and leaves
+the socket open. It shares the same `_resolve` validation, `_GpuQueue` admission
+and `_pcm_frames` streaming core as the HTTP route -- only the transport differs.
+
 Other endpoints: `GET /health` (ready when both models are warmed),
 `GET /v1/voices` (presets + library clips), `POST /shutdown` (clean `:quit --stop`).
 

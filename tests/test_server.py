@@ -1,4 +1,5 @@
 import asyncio
+import json
 import threading
 
 import httpx
@@ -261,3 +262,46 @@ def test_queue_cap_returns_503_when_full(tmp_path):
             assert rb.status_code == 200
 
     asyncio.run(scenario())
+
+
+def _drain_ws(ws):
+    """Read one utterance off the socket: a start marker, PCM binary frames,
+    then an end marker. Return the concatenated PCM bytes."""
+    assert ws.receive_json()["type"] == "start"
+    chunks = []
+    while True:
+        msg = ws.receive()
+        if msg.get("bytes") is not None:
+            chunks.append(msg["bytes"])
+        else:
+            assert json.loads(msg["text"])["type"] == "end"
+            return b"".join(chunks)
+
+
+def test_ws_streams_pcm_frames(tmp_path):
+    client, _ = _client(tmp_path)
+    with client.websocket_connect("/v1/audio/stream") as ws:
+        ws.send_json({"input": "Hello.", "backend": "kokoro", "voice": "af_heart"})
+        pcm = _drain_ws(ws)
+    assert len(pcm) > 0
+    assert len(pcm) % 4 == 0  # float32 == 4 bytes/sample
+
+
+def test_ws_unknown_voice_sends_error_and_stays_open(tmp_path):
+    client, _ = _client(tmp_path)
+    with client.websocket_connect("/v1/audio/stream") as ws:
+        ws.send_json({"input": "hi", "backend": "kokoro", "voice": "nicole"})
+        err = ws.receive_json()
+        assert err["type"] == "error"
+        assert "nicole" in err["detail"]
+        # connection survives a bad request: a good one still streams.
+        ws.send_json({"input": "hi", "backend": "kokoro", "voice": "af_heart"})
+        assert len(_drain_ws(ws)) > 0
+
+
+def test_ws_multiple_utterances_one_connection(tmp_path):
+    client, _ = _client(tmp_path)
+    with client.websocket_connect("/v1/audio/stream") as ws:
+        for _ in range(3):
+            ws.send_json({"input": "hi", "backend": "kokoro", "voice": "af_heart"})
+            assert len(_drain_ws(ws)) > 0
