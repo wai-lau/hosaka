@@ -122,3 +122,27 @@ def test_pipeline_lead_ms_default():
     from hosaka.config import PIPELINE_LEAD_MS
 
     assert PIPELINE_LEAD_MS == 1500
+
+
+def test_find_ffplay_on_path():
+    from hosaka.audio import _find_ffplay
+
+    found = _find_ffplay(probe=lambda name: name == "ffplay.exe", glob_fn=lambda p: [])
+    assert found == "ffplay.exe"
+
+
+def test_find_ffplay_via_winget_glob():
+    from hosaka.audio import _find_ffplay
+
+    fake = (
+        "/mnt/c/Users/x/AppData/Local/Microsoft/WinGet/Packages/"
+        "Gyan.FFmpeg_1/ffmpeg-8/bin/ffplay.exe"
+    )
+    found = _find_ffplay(probe=lambda name: False, glob_fn=lambda p: [fake])
+    assert found == fake
+
+
+def test_find_ffplay_absent():
+    from hosaka.audio import _find_ffplay
+
+    assert _find_ffplay(probe=lambda name: False, glob_fn=lambda p: []) is None

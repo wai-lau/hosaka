@@ -1,3 +1,4 @@
+import glob
 import subprocess
 import wave
 from pathlib import Path
@@ -52,6 +53,32 @@ def _gain_align(chunk: bytes, tail: bytes, gain: float) -> tuple[bytes, bytes]:
     if gain != 1.0:
         arr = np.clip(arr * gain, -1.0, 1.0)
     return arr.astype("<f4").tobytes(), new_tail
+
+
+_FFPLAY_GLOB = (
+    "/mnt/c/Users/*/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg*/ffmpeg*/bin/ffplay.exe"
+)
+
+
+def _probe_ffplay(name: str) -> bool:
+    try:
+        subprocess.run(
+            [name, "-version"],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _find_ffplay(probe=_probe_ffplay, glob_fn=glob.glob) -> str | None:
+    """Locate ffplay: prefer it on PATH, else the winget install location."""
+    if probe("ffplay.exe"):
+        return "ffplay.exe"
+    matches = sorted(glob_fn(_FFPLAY_GLOB))
+    return matches[0] if matches else None
 
 
 class PacatPlayer:
