@@ -59,3 +59,23 @@ def test_quit_variants():
 
 def test_unknown_command_is_error():
     assert parse_line(":frobnicate").kind == "error"
+
+
+def test_bracketed_paste_coalesces_into_one_input():
+    from hosaka.cli.repl import _logical_lines
+
+    lines = ["\x1b[200~first line\n", "second line\n", "third\x1b[201~\n"]
+    assert list(_logical_lines(iter(lines))) == ["first line second line third"]
+
+
+def test_normal_lines_pass_through():
+    from hosaka.cli.repl import _logical_lines
+
+    out = list(_logical_lines(iter(["hello\n", ":voice af_heart\n"])))
+    assert out == ["hello", ":voice af_heart"]
+
+
+def test_single_line_paste_unwrapped():
+    from hosaka.cli.repl import _logical_lines
+
+    assert list(_logical_lines(iter(["\x1b[200~one liner\x1b[201~\n"]))) == ["one liner"]
