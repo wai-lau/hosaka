@@ -79,3 +79,38 @@ def test_single_line_paste_unwrapped():
     from hosaka.cli.repl import _logical_lines
 
     assert list(_logical_lines(iter(["\x1b[200~one liner\x1b[201~\n"]))) == ["one liner"]
+
+
+def test_speak_streams_chunks_then_ends(monkeypatch):
+    import hosaka.cli.repl as repl
+
+    events = []
+
+    class FakePlayer:
+        def write(self, chunk):
+            events.append(("write", bytes(chunk)))
+
+        def end_utterance(self):
+            events.append(("end", None))
+
+    class FakeResp:
+        status_code = 200
+
+        def iter_bytes(self):
+            yield b"\x00\x00\x00\x00"
+            yield b"\x01\x01\x01\x01"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(repl.httpx, "stream", lambda *a, **k: FakeResp())
+    repl._speak(FakePlayer(), "kokoro", "af_heart", {}, "hi")
+
+    assert events == [
+        ("write", b"\x00\x00\x00\x00"),
+        ("write", b"\x01\x01\x01\x01"),
+        ("end", None),
+    ]

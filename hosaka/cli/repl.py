@@ -64,7 +64,6 @@ def _voice_backend(name, fallback):
 
 def _speak(player, backend, voice, params, text):
     body = {"input": text, "backend": backend, "voice": voice, "params": params, "stream": True}
-    buf = bytearray()
     try:
         with httpx.stream("POST", f"{SERVER_URL}/v1/audio/speech", json=body, timeout=None) as r:
             if r.status_code != 200:
@@ -72,14 +71,13 @@ def _speak(player, backend, voice, params, text):
                 return
             for raw in r.iter_bytes():
                 if raw:
-                    buf.extend(raw)
+                    player.write(raw)
     except httpx.HTTPError as exc:
         # A failure inside the engine closes the stream mid-body (status was
         # already 200). Report it and keep the REPL alive instead of crashing.
         print(f"[stream error] {exc}; see /tmp/hosaka-server.log")
-        return
-    if buf:
-        player.play(bytes(buf))
+    finally:
+        player.end_utterance()
 
 
 _PASTE_START = "\x1b[200~"
