@@ -312,5 +312,15 @@ class FfplayPlayer:
 
 
 def make_player(gain: float = OUTPUT_GAIN):
-    """Pick the playback path: Windows host under WSLg, else pacat."""
-    return WinSoundPlayer(gain=gain) if on_wslg() else PacatPlayer(gain=gain)
+    """Pick the playback path: ffplay (streaming) on WSLg when present, else the
+    buffered Windows player; pacat on native Linux."""
+    if not on_wslg():
+        return PacatPlayer(gain=gain)
+    ffplay = _find_ffplay()
+    if ffplay:
+        return FfplayPlayer(ffplay, gain=gain)
+    print(
+        "[no ffmpeg on Windows; using buffered playback. Install ffmpeg "
+        "(winget install ffmpeg) for seamless streaming.]"
+    )
+    return WinSoundPlayer(gain=gain)

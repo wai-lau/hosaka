@@ -99,6 +99,7 @@ def test_winsound_prepends_lead_silence(tmp_path):
 
 def test_make_player_selects_by_environment(monkeypatch):
     monkeypatch.setattr(audio, "on_wslg", lambda: True)
+    monkeypatch.setattr(audio, "_find_ffplay", lambda: None)
     monkeypatch.setattr(audio, "_win_temp_dir", lambda: __import__("pathlib").Path("/tmp"))
     assert isinstance(audio.make_player(), WinSoundPlayer)
     monkeypatch.setattr(audio, "on_wslg", lambda: False)
@@ -248,3 +249,24 @@ def test_ffplay_broken_pipe_is_handled(capsys):
     with p:
         p.write(np.full(8, 0.5, dtype=np.float32).astype("<f4").tobytes())
     assert "ffplay" in capsys.readouterr().out.lower()  # reported, no raise
+
+
+def test_make_player_ffplay_when_present(monkeypatch):
+    monkeypatch.setattr(audio, "on_wslg", lambda: True)
+    monkeypatch.setattr(audio, "_find_ffplay", lambda: "ffplay.exe")
+    monkeypatch.setattr(audio.FfplayPlayer, "_launch", lambda self: None)
+    assert isinstance(audio.make_player(), audio.FfplayPlayer)
+
+
+def test_make_player_winsound_when_ffplay_absent(monkeypatch, capsys):
+    monkeypatch.setattr(audio, "on_wslg", lambda: True)
+    monkeypatch.setattr(audio, "_find_ffplay", lambda: None)
+    monkeypatch.setattr(audio, "_win_temp_dir", lambda: __import__("pathlib").Path("/tmp"))
+    player = audio.make_player()
+    assert isinstance(player, audio.WinSoundPlayer)
+    assert "ffmpeg" in capsys.readouterr().out.lower()  # install hint
+
+
+def test_make_player_pacat_off_wslg(monkeypatch):
+    monkeypatch.setattr(audio, "on_wslg", lambda: False)
+    assert isinstance(audio.make_player(), audio.PacatPlayer)
