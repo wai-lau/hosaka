@@ -119,6 +119,13 @@ Other endpoints: `GET /health` (ready when both models are warmed),
   `manifest.json` mapping voice-id → {path, source, params, created}. Lives in
   `~/.local/share/hosaka/voices` — outside the repo, so personal recordings never
   enter git. The repo ships a couple of Kokoro-rendered sample seeds.
+- **Pronunciation lexicon** (`hosaka/lexicon.py`): a flat `{word: respelling}`
+  JSON at `~/.local/share/hosaka/lexicon.json` (untracked, alongside the voice
+  library). Applied to `input` before chunking on every path (HTTP, WS, REPL,
+  web) so it covers both backends — Kokoro and Chatterbox are plain text-driven,
+  so respelling to a homophone (`Wai` → `Way`) is the one engine-agnostic lever.
+  Matching is whole-word + case-insensitive; the server mtime-caches the file and
+  recompiles only on edit. Managed live from the REPL via `:pron`.
 - **Audio out** (`hosaka/audio.py`): `make_player()` picks the path. Native
   Linux → `PacatPlayer` (`pacat --raw`, PulseAudio). Under WSLg the RDP audio
   bridge adds static to all in-WSL playback, so audio plays on the **Windows**
@@ -164,6 +171,7 @@ never imports Parler. See `scripts/setup_server_venv.sh` and
 |------|----------------|
 | `hosaka/config.py` | constants: sample rate, ports, paths, defaults |
 | `hosaka/chunking.py` | sentence-fragment splitter (low-latency lever) |
+| `hosaka/lexicon.py` | custom-pronunciation respelling map (applied pre-chunk) |
 | `hosaka/library.py` | voice library + JSON manifest |
 | `hosaka/schemas.py` | request/response models, param clamping |
 | `hosaka/audio.py` | playback players (ffplay / pacat / winsound) + `make_player` selection |

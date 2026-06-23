@@ -50,6 +50,19 @@ def parse_line(line: str) -> ReplAction:
         if args and args[0] in ("kokoro", "chatterbox"):
             return ReplAction("backend", args[0])
         return ReplAction("error", "usage: :backend kokoro|chatterbox")
+    if cmd == "pron":
+        sub = args[0] if args else "list"
+        if sub == "list":
+            return ReplAction("pron", ("list", None))
+        if sub == "add":
+            if len(args) < 3:
+                return ReplAction("error", "usage: :pron add <word> <respelling>")
+            return ReplAction("pron", ("add", (args[1], " ".join(args[2:]))))
+        if sub in ("rm", "remove", "del"):
+            if len(args) != 2:
+                return ReplAction("error", "usage: :pron rm <word>")
+            return ReplAction("pron", ("rm", args[1]))
+        return ReplAction("error", "usage: :pron [list] | add <word> <respelling> | rm <word>")
     if cmd == "voices":
         return ReplAction("voices")
     if cmd in ("status", "info"):

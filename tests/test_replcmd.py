@@ -61,24 +61,81 @@ def test_unknown_command_is_error():
     assert parse_line(":frobnicate").kind == "error"
 
 
-def test_bracketed_paste_coalesces_into_one_input():
-    from hosaka.cli.repl import _logical_lines
-
-    lines = ["\x1b[200~first line\n", "second line\n", "third\x1b[201~\n"]
-    assert list(_logical_lines(iter(lines))) == ["first line second line third"]
-
-
-def test_normal_lines_pass_through():
-    from hosaka.cli.repl import _logical_lines
-
-    out = list(_logical_lines(iter(["hello\n", ":voice af_heart\n"])))
-    assert out == ["hello", ":voice af_heart"]
+def test_pron_bare_and_list_are_list():
+    assert parse_line(":pron").value == ("list", None)
+    assert parse_line(":pron list").value == ("list", None)
+    assert parse_line(":pron").kind == "pron"
 
 
-def test_single_line_paste_unwrapped():
-    from hosaka.cli.repl import _logical_lines
+def test_pron_add_single_word_respelling():
+    a = parse_line(":pron add Wai Way")
+    assert a.kind == "pron"
+    assert a.value == ("add", ("Wai", "Way"))
 
-    assert list(_logical_lines(iter(["\x1b[200~one liner\x1b[201~\n"]))) == ["one liner"]
+
+def test_pron_add_multiword_respelling():
+    assert parse_line(":pron add hosaka ho sock uh").value == (
+        "add",
+        ("hosaka", "ho sock uh"),
+    )
+
+
+def test_pron_add_missing_respelling_is_error():
+    assert parse_line(":pron add Wai").kind == "error"
+
+
+def test_pron_rm():
+    assert parse_line(":pron rm Wai").value == ("rm", "Wai")
+    assert parse_line(":pron del Wai").value == ("rm", "Wai")
+
+
+def test_pron_rm_needs_one_word():
+    assert parse_line(":pron rm").kind == "error"
+
+
+def test_pron_unknown_subcommand_is_error():
+    assert parse_line(":pron frob x").kind == "error"
+
+
+def _fake_input(monkeypatch, items):
+    """Drive _input_lines: feed strings to return, exception instances to raise."""
+    seq = iter(items)
+
+    def fake(prompt=""):
+        v = next(seq)
+        if isinstance(v, BaseException):
+            raise v
+        return v
+
+    monkeypatch.setattr("builtins.input", fake)
+
+
+def test_input_lines_pass_through(monkeypatch):
+    from hosaka.cli.repl import _input_lines
+
+    _fake_input(monkeypatch, ["hello", ":voice af_heart", EOFError()])
+    assert list(_input_lines("")) == ["hello", ":voice af_heart"]
+
+
+def test_input_lines_flattens_multiline_paste(monkeypatch):
+    from hosaka.cli.repl import _input_lines
+
+    _fake_input(monkeypatch, ["first line\nsecond line\nthird", EOFError()])
+    assert list(_input_lines("")) == ["first line second line third"]
+
+
+def test_input_lines_eof_ends_iteration(monkeypatch):
+    from hosaka.cli.repl import _input_lines
+
+    _fake_input(monkeypatch, [EOFError()])
+    assert list(_input_lines("")) == []
+
+
+def test_input_lines_ctrl_c_abandons_line_and_continues(monkeypatch, capsys):
+    from hosaka.cli.repl import _input_lines
+
+    _fake_input(monkeypatch, [KeyboardInterrupt(), "after", EOFError()])
+    assert list(_input_lines("")) == ["after"]
 
 
 def test_speak_streams_chunks_then_ends(monkeypatch):

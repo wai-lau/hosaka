@@ -1,3 +1,4 @@
+import readline  # noqa: F401 -- importing it gives input() line editing + history
 import subprocess
 import sys
 import tempfile
@@ -9,15 +10,20 @@ import httpx
 from hosaka.audio import make_player
 from hosaka.cli.replcmd import parse_line
 from hosaka.config import (
+    DATA_DIR,
     DEFAULT_BACKEND,
     DEFAULT_VOICE,
+    LEXICON_PATH,
     SERVER_PORT,
     SERVER_URL,
     VOICE_DIR,
     native_to_pct,
     pct_to_native,
 )
+from hosaka.lexicon import add_entry, load_map, remove_entry
 from hosaka.library import VoiceLibrary
+
+HISTORY_FILE = DATA_DIR / "repl_history"
 
 
 def _server_up() -> bool:
@@ -80,36 +86,25 @@ def _speak(player, backend, voice, params, text):
         player.end_utterance()
 
 
-_PASTE_START = "\x1b[200~"
-_PASTE_END = "\x1b[201~"
+def _input_lines(prompt):
+    """Yield logical input lines using readline (importing it above wires the
+    editing in): left/right arrows, Ctrl-A/Ctrl-E, and Up/Down history all work
+    inside input().
 
-
-def _logical_lines(stream):
-    """Yield one logical input per line, but coalesce a bracketed paste (which
-    arrives as many lines wrapped in ESC[200~ / ESC[201~) into a single input
-    with its newlines flattened to spaces -- so pasted multi-line text speaks
-    as one utterance instead of N choppy ones."""
-    buf = None
-    for raw in stream:
-        line = raw.rstrip("\n")
-        if buf is not None:
-            if _PASTE_END in line:
-                buf.append(line.replace(_PASTE_END, ""))
-                yield " ".join(p for p in buf if p)
-                buf = None
-            else:
-                buf.append(line)
+    Ctrl-C abandons the half-typed line and keeps the REPL alive (like a shell);
+    Ctrl-D (EOF) ends it. readline's bracketed paste delivers a multi-line paste
+    as one string -- flatten embedded newlines to spaces so it speaks as a
+    single utterance instead of N choppy ones.
+    """
+    while True:
+        try:
+            line = input(prompt)
+        except EOFError:
+            return
+        except KeyboardInterrupt:
+            print()  # drop the current line, like a shell ^C, and reprompt
             continue
-        if _PASTE_START in line:
-            line = line.replace(_PASTE_START, "")
-            if _PASTE_END in line:  # whole paste fit on one line
-                yield line.replace(_PASTE_END, "")
-            else:
-                buf = [line]
-            continue
-        yield line
-    if buf:  # paste left open (no end marker before EOF)
-        yield " ".join(p for p in buf if p)
+        yield line.replace("\n", " ")
 
 
 def main():
@@ -122,12 +117,16 @@ def main():
     voice = DEFAULT_VOICE
     params = {"exaggeration": 0.5, "cfg_weight": 0.4, "temperature": 0.8, "speed": 1.0}
 
+    try:
+        readline.read_history_file(HISTORY_FILE)
+    except OSError:
+        pass  # no history yet (first run) or unreadable -- start fresh
+
     print("hosaka ready. Type to speak; :help for commands. (^D to quit)")
-    sys.stdout.write("\x1b[?2004h")  # enable bracketed paste
-    sys.stdout.flush()
+    prompt = "> " if sys.stdin.isatty() else ""
     try:
         with make_player() as player:
-            for line in _logical_lines(sys.stdin):
+            for line in _input_lines(prompt):
                 a = parse_line(line)
                 if a.kind == "speak":
                     if a.value:
@@ -156,6 +155,21 @@ def main():
                 elif a.kind == "volume":
                     player.gain = pct_to_native("gain", a.value)
                     print(f"  volume {a.value:.0f}/100 -> {player.gain:.2f}x")
+                elif a.kind == "pron":
+                    sub, val = a.value
+                    if sub == "list":
+                        m = load_map(LEXICON_PATH)
+                        if not m:
+                            print("  (no custom pronunciations)")
+                        for word in sorted(m):
+                            print(f"  {word:20s} -> {m[word]}")
+                    elif sub == "add":
+                        word, respelling = val
+                        add_entry(LEXICON_PATH, word, respelling)
+                        print(f"  {word} -> {respelling}")
+                    elif sub == "rm":
+                        _, removed = remove_entry(LEXICON_PATH, val)
+                        print(f"  {'removed' if removed else 'not found'}: {val}")
                 elif a.kind == "voices":
                     for v in httpx.get(f"{SERVER_URL}/v1/voices").json():
                         desc = f"  {v['id']:20s} {v['backend']:11s} {v['source']:9s}"
@@ -181,7 +195,8 @@ def main():
                 elif a.kind == "help":
                     print(
                         ":voice <name> | :clone <id|path> | :backend k|c | "
-                        ":exag/:cfg/:temp/:speed/:vol <0-100> | :voices | :status | "
+                        ":exag/:cfg/:temp/:speed/:vol <0-100> | :voices | "
+                        ":pron [list|add <word> <respelling>|rm <word>] | :status | "
                         ":quit[ --stop]"
                     )
                 elif a.kind == "error":
@@ -194,8 +209,11 @@ def main():
                             pass
                     break
     finally:
-        sys.stdout.write("\x1b[?2004l")  # disable bracketed paste
-        sys.stdout.flush()
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            readline.write_history_file(HISTORY_FILE)
+        except OSError:
+            pass  # best-effort -- never let a history write sink the REPL exit
 
 
 if __name__ == "__main__":

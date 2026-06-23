@@ -67,8 +67,12 @@ def native_to_pct(name: str, value: float) -> float:
 
 LLM_MODEL = "gpt-oss:20b"  # stopped on server start to free VRAM
 
-VOICE_DIR = Path.home() / ".local" / "share" / "hosaka" / "voices"
+DATA_DIR = Path.home() / ".local" / "share" / "hosaka"  # untracked personal data
+VOICE_DIR = DATA_DIR / "voices"
 MANIFEST_PATH = VOICE_DIR / "manifest.json"
+# Custom-pronunciation map ({word: respelling}); applied to input before
+# chunking on every path into the engines. See hosaka/lexicon.py.
+LEXICON_PATH = DATA_DIR / "lexicon.json"
 
 # Default sentence the bake CLI speaks to produce a clone seed clip.
 BAKE_SEED_TEXT = (

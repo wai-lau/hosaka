@@ -11,7 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from hosaka.chunking import split_fragments
-from hosaka.config import LLM_MODEL, MAX_QUEUE
+from hosaka.config import LEXICON_PATH, LLM_MODEL, MAX_QUEUE
+from hosaka.lexicon import Lexicon
 from hosaka.library import VoiceLibrary
 from hosaka.schemas import SpeechRequest, VoiceInfo, clamp_params
 from hosaka.server.engines.base import EngineRegistry
@@ -188,6 +189,7 @@ def create_app(
     app.state.library = library
 
     gpu_queue = _GpuQueue(max_queue)
+    lexicon = Lexicon(LEXICON_PATH)
 
     @app.get("/health")
     def health():
@@ -239,7 +241,7 @@ def create_app(
 
         await _admit_or(busy)
         params = clamp_params(req.params).model_dump()
-        fragments = split_fragments(req.input)
+        fragments = split_fragments(lexicon.apply(req.input))
         return StreamingResponse(
             _pcm_frames(engine, req.voice, params, fragments, gpu_queue),
             media_type="application/octet-stream",
@@ -276,7 +278,7 @@ def create_app(
                 if not await _admit_or(busy):
                     continue
                 params = clamp_params(req.params).model_dump()
-                fragments = split_fragments(req.input)
+                fragments = split_fragments(lexicon.apply(req.input))
                 await ws.send_json({"type": "start"})
                 async for chunk in _pcm_frames(engine, req.voice, params, fragments, gpu_queue):
                     await ws.send_bytes(chunk)

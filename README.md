@@ -71,12 +71,19 @@ python3.12 -m venv .venv-bake
 Type a line and press enter to hear it. The REPL auto-spawns the server (which
 stops `gpt-oss:20b` first to free VRAM, then loads + warms both models).
 
+The line is `readline`-edited: left/right + Ctrl-A/Ctrl-E to move, Up/Down to
+recall history (persisted to `~/.local/share/hosaka/repl_history`), Ctrl-C to
+abandon the current line, Ctrl-D to quit.
+
 Commands:
 - `:voice <name> [text]` — switch voice (backend auto-resolved from the registry);
   any trailing text is spoken immediately in that voice.
 - `:clone <id|path>` — clone a library voice id, or add+use an arbitrary WAV.
 - `:backend kokoro|chatterbox` — force the backend.
 - `:exag` / `:cfg` / `:temp` / `:speed <number>` — tune.
+- `:pron add <word> <respelling>` — fix a mispronounced word by respelling it to
+  a homophone (`:pron add Wai Way`); applies on both backends. `:pron list` /
+  `:pron rm <word>`. Stored in `~/.local/share/hosaka/lexicon.json`.
 - `:voices` — list presets + library clips. `:help`. `:quit` (or `:quit --stop`).
 
 Bake a described voice (runs offline, in the bake venv):
