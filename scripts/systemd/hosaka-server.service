@@ -1,0 +1,30 @@
+# hosaka TTS server as a systemd *user* service -- starts on WSL startup.
+#
+# Install (one time):
+#   mkdir -p ~/.config/systemd/user
+#   cp scripts/systemd/hosaka-server.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now hosaka-server.service
+#   loginctl enable-linger "$USER"   # <-- makes it come up at WSL boot w/o login
+#
+# Requires systemd in WSL (/etc/wsl.conf -> [boot] systemd=true). Check:
+#   systemctl --user status hosaka-server
+#   curl -s localhost:8123/health
+[Unit]
+Description=hosaka TTS server (Kokoro + Chatterbox, GPU, 127.0.0.1:8123)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/wai/src/hosaka
+# /usr/local/bin so the startup `ollama stop` (VRAM free) is found; CUDA libs
+# resolve via the system ld.so.conf (WSL), no LD_LIBRARY_PATH needed.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/wai/src/hosaka/scripts/start_server.sh
+Restart=on-failure
+RestartSec=5
+# Models load + warm on startup; allow time before considering it failed.
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target
