@@ -7,6 +7,7 @@ import numpy as np
 
 from hosaka.config import (
     OUTPUT_GAIN,
+    PIPELINE_LEAD_MS,
     PLAYBACK_LATENCY_MSEC,
     PLAYBACK_LEAD_SILENCE_MS,
     SAMPLE_RATE,
@@ -208,6 +209,103 @@ class WinSoundPlayer:
 
     def close(self) -> None:
         pass
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+class FfplayPlayer:
+    """Streams float32 PCM into a persistent ffplay.exe on the Windows host.
+
+    ffplay plays natively on Windows (clean, bypassing WSLg's RDP audio) and
+    gaplessly, so fragment N plays while the server synthesizes N+1. A
+    time-based lead buffer is withheld then released to give ffplay a cushion
+    against per-fragment synth jitter at Chatterbox's RTF ~1.
+    """
+
+    def __init__(
+        self,
+        ffplay_path,
+        gain=OUTPUT_GAIN,
+        lead_ms=PIPELINE_LEAD_MS,
+        popen=subprocess.Popen,
+    ):
+        self._cmd = [
+            ffplay_path,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nodisp",
+            "-autoexit",
+            "-f",
+            "f32le",
+            "-ar",
+            str(SAMPLE_RATE),
+            "-ch_layout",
+            "mono",
+            "-i",
+            "pipe:0",
+        ]
+        self.gain = float(gain)
+        self._lead_bytes = SAMPLE_RATE * lead_ms // 1000 * 4
+        self._popen = popen
+        self._proc = None
+        self._tail = b""  # partial-float carry for alignment
+        self._hold = bytearray()
+        self._primed = False
+
+    def __enter__(self):
+        self._launch()
+        return self
+
+    def _launch(self):
+        self._proc = self._popen(self._cmd, stdin=subprocess.PIPE)
+        self._tail = b""
+        self._hold = bytearray()
+        self._primed = False
+
+    def _feed(self, data):
+        if not data:
+            return
+        if self._proc is None or self._proc.poll() is not None:
+            self._launch()
+        try:
+            self._proc.stdin.write(data)
+        except (BrokenPipeError, OSError) as exc:
+            print(f"[ffplay closed: {exc}; will relaunch]")
+            self._proc = None
+
+    def write(self, chunk):
+        out, self._tail = _gain_align(chunk, self._tail, self.gain)
+        if not out:
+            return
+        if self._primed:
+            self._feed(out)
+            return
+        self._hold.extend(out)
+        if len(self._hold) >= self._lead_bytes:
+            self._feed(bytes(self._hold))
+            self._hold = bytearray()
+            self._primed = True
+
+    def end_utterance(self):
+        if self._hold:
+            self._feed(bytes(self._hold))
+        self._hold = bytearray()
+        self._primed = False
+
+    def play(self, pcm_bytes):
+        self.write(pcm_bytes)
+        self.end_utterance()
+
+    def close(self):
+        if self._proc and self._proc.stdin:
+            try:
+                self._proc.stdin.close()
+            except OSError:
+                pass
+            self._proc.wait(timeout=10)
+            self._proc = None
 
     def __exit__(self, *exc):
         self.close()

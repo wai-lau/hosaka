@@ -1,9 +1,10 @@
+import io
 import wave
 
 import numpy as np
 
 import hosaka.audio as audio
-from hosaka.audio import PacatPlayer, WinSoundPlayer
+from hosaka.audio import FfplayPlayer, PacatPlayer, WinSoundPlayer
 
 
 def test_player_writes_bytes_to_subprocess(tmp_path):
@@ -175,3 +176,75 @@ def test_pacat_end_utterance_is_noop(tmp_path):
         p.write(src.astype("<f4").tobytes())
         p.end_utterance()  # must not raise, must not duplicate output
     assert out.stat().st_size == src.nbytes
+
+
+class _FakeProc:
+    def __init__(self):
+        self.stdin = io.BytesIO()
+        self.stdin.close = lambda: None  # keep bytes readable after close()
+        self._alive = True
+
+    def poll(self):
+        return None if self._alive else 0
+
+    def wait(self, timeout=None):
+        self._alive = False
+
+
+def test_ffplay_holds_lead_then_streams():
+
+    procs = []
+
+    def fake_popen(cmd, **kw):
+        p = _FakeProc()
+        procs.append((cmd, p))
+        return p
+
+    # lead_ms 10 at 24kHz f32 = 24000*0.01*4 = 960 bytes
+    p = FfplayPlayer("ffplay.exe", gain=1.0, lead_ms=10, popen=fake_popen)
+    with p:
+        small = np.full(100, 0.5, dtype=np.float32).astype("<f4").tobytes()  # 400 B
+        p.write(small)
+        assert procs[0][1].stdin.getvalue() == b""  # below lead, withheld
+        p.write(small)
+        p.write(small)  # now 1200 B >= 960 -> flush
+        assert len(procs[0][1].stdin.getvalue()) == 1200
+    # launched with the verified raw flags
+    assert procs[0][0][:1] == ["ffplay.exe"]
+    assert "-ch_layout" in procs[0][0] and "f32le" in procs[0][0]
+
+
+def test_ffplay_end_utterance_flushes_short_utterance():
+    def fake_popen(cmd, **kw):
+        return _FakeProc()
+
+    p = FfplayPlayer("ffplay.exe", gain=1.0, lead_ms=10000, popen=fake_popen)
+    with p:
+        data = np.full(100, 0.5, dtype=np.float32).astype("<f4").tobytes()
+        p.write(data)  # below the huge lead -> withheld
+        assert p._proc.stdin.getvalue() == b""
+        p.end_utterance()  # must flush the remainder
+        assert len(p._proc.stdin.getvalue()) == 400
+
+
+def test_ffplay_broken_pipe_is_handled(capsys):
+    class _BrokenProc(_FakeProc):
+        def __init__(self):
+            super().__init__()
+
+            def boom(_):
+                raise BrokenPipeError()
+
+            self.stdin.write = boom
+
+    launched = []
+
+    def fake_popen(cmd, **kw):
+        p = _BrokenProc()
+        launched.append(p)
+        return p
+
+    p = FfplayPlayer("ffplay.exe", gain=1.0, lead_ms=0, popen=fake_popen)
+    with p:
+        p.write(np.full(8, 0.5, dtype=np.float32).astype("<f4").tobytes())
+    assert "ffplay" in capsys.readouterr().out.lower()  # reported, no raise
