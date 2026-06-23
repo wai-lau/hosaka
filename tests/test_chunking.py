@@ -23,6 +23,18 @@ def test_empty_text_returns_empty_list():
     assert split_fragments("   ") == []
 
 
+def test_em_dash_becomes_a_pause():
+    # -- / em-dash / en-dash are not pauses to the model; normalize to a comma.
+    for dash in ("Wait -- no.", "Wait--no.", "Wait — no.", "Wait – no."):
+        out = " ".join(split_fragments(dash))
+        assert "--" not in out and "—" not in out and "–" not in out
+        assert "Wait, no." in out
+
+
+def test_word_hyphen_is_left_alone():
+    assert split_fragments("well-being matters.") == ["well-being matters."]
+
+
 def test_every_fragment_capped_for_long_run_on_sentence():
     # One long comma-spliced sentence (single period) must not produce any
     # fragment over max_chars -- that is what blew past Chatterbox's limit.

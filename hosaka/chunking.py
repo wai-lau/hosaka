@@ -2,6 +2,13 @@ import re
 
 _SENT_END = re.compile(r"(?<=[.!?])\s+")
 _CLAUSE_END = re.compile(r"[,;:](?=\s)")
+# Dashes used as punctuation (-- , --- , em/en dash), not word hyphens. The
+# models don't pause on these, so turn them into a comma to force the pause.
+_DASH = re.compile(r"\s*(?:-{2,}|[—–])\s*")
+
+
+def normalize_punct(text: str) -> str:
+    return _DASH.sub(", ", text)
 
 
 def split_fragments(text: str, first_max_chars: int = 60, max_chars: int = 280) -> list[str]:
@@ -12,7 +19,7 @@ def split_fragments(text: str, first_max_chars: int = 60, max_chars: int = 280) 
     CUDA context (device-side assert) if a single fragment exceeds its token
     limit, so an uncapped long sentence must never reach the engine whole.
     """
-    text = text.strip()
+    text = normalize_punct(text.strip())
     if not text:
         return []
 
