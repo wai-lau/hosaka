@@ -146,3 +146,32 @@ def test_find_ffplay_absent():
     from hosaka.audio import _find_ffplay
 
     assert _find_ffplay(probe=lambda name: False, glob_fn=lambda p: []) is None
+
+
+def test_winsound_accumulates_then_plays_on_end(tmp_path):
+    src = np.full(50, 0.3, dtype=np.float32).astype("<f4").tobytes()
+    p = WinSoundPlayer(
+        gain=1.0,
+        tmp_dir=tmp_path,
+        runner=lambda a: None,
+        to_winpath=lambda s: s,
+        lead_silence_ms=0,
+    )
+    with p:
+        p.write(src[:80])
+        p.write(src[80:])
+        assert list(tmp_path.glob("*.wav")) == []  # nothing played until end
+        p.end_utterance()
+    with wave.open(str(next(tmp_path.glob("*.wav"))), "rb") as w:
+        pcm = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+    assert np.allclose(pcm / 32767, 0.3, atol=1e-3)
+
+
+def test_pacat_end_utterance_is_noop(tmp_path):
+    out = tmp_path / "p.raw"
+    p = PacatPlayer(cmd=["sh", "-c", f"cat > {out}"], gain=1.0)
+    src = np.full(10, 0.5, dtype=np.float32)
+    with p:
+        p.write(src.astype("<f4").tobytes())
+        p.end_utterance()  # must not raise, must not duplicate output
+    assert out.stat().st_size == src.nbytes

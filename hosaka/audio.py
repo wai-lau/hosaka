@@ -129,6 +129,9 @@ class PacatPlayer:
         """Play one complete utterance (uniform interface with WinSoundPlayer)."""
         self.write(pcm_bytes)
 
+    def end_utterance(self) -> None:
+        pass  # continuous stream; nothing to flush per utterance
+
     def close(self) -> None:
         if self._proc and self._proc.stdin:
             if self._tail:  # flush any trailing partial bytes unmodified
@@ -166,13 +169,27 @@ class WinSoundPlayer:
         self._to_winpath = to_winpath or _wslpath_w
         self._lead = np.zeros(SAMPLE_RATE * lead_silence_ms // 1000, dtype="<i2")
         self._n = 0
+        self._buf = bytearray()
 
     def __enter__(self):
+        self._buf = bytearray()
         return self
 
+    def write(self, pcm_bytes: bytes) -> None:
+        self._buf.extend(pcm_bytes)
+
+    def end_utterance(self) -> None:
+        if self._buf:
+            self._play_buffer(bytes(self._buf))
+            self._buf = bytearray()
+
     def play(self, pcm_bytes: bytes) -> None:
+        self.write(pcm_bytes)
+        self.end_utterance()
+
+    def _play_buffer(self, pcm_bytes: bytes) -> None:
         pcm16 = np.concatenate([self._lead, _gained_pcm16(pcm_bytes, self.gain)])
-        path = self._tmp / f"hosaka_play_{self._n % 3}.wav"  # rotate a few files
+        path = self._tmp / f"hosaka_play_{self._n % 3}.wav"
         self._n += 1
         with wave.open(str(path), "wb") as w:
             w.setnchannels(1)
@@ -188,11 +205,6 @@ class WinSoundPlayer:
                 f"(New-Object Media.SoundPlayer '{winpath}').PlaySync()",
             ]
         )
-
-    # Accept incremental writes too, so it can stand in for PacatPlayer; here a
-    # write IS a full utterance (the caller buffers before calling).
-    def write(self, pcm_bytes: bytes) -> None:
-        self.play(pcm_bytes)
 
     def close(self) -> None:
         pass
