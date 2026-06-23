@@ -93,6 +93,11 @@ malformed / unknown-voice / over-cap request gets `{"type":"error"}` and leaves
 the socket open. It shares the same `_resolve` validation, `_GpuQueue` admission
 and `_pcm_frames` streaming core as the HTTP route -- only the transport differs.
 
+A minimal browser demo client is bundled at `/app/` (`hosaka/web/`): an
+AudioWorklet PCM player driven by the WebSocket endpoint. It is a reference /
+local-test client; a real front end (e.g. on a public host) can lift the same
+two files.
+
 Other endpoints: `GET /health` (ready when both models are warmed),
 `GET /v1/voices` (presets + library clips), `POST /shutdown` (clean `:quit --stop`).
 

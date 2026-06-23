@@ -305,3 +305,12 @@ def test_ws_multiple_utterances_one_connection(tmp_path):
         for _ in range(3):
             ws.send_json({"input": "hi", "backend": "kokoro", "voice": "af_heart"})
             assert len(_drain_ws(ws)) > 0
+
+
+def test_app_static_page_served(tmp_path):
+    # The bundled browser demo client is served at /app/.
+    client, _ = _client(tmp_path)
+    r = client.get("/app/")
+    assert r.status_code == 200
+    assert "hosaka" in r.text.lower()
+    assert client.get("/app/pcm-player.js").status_code == 200

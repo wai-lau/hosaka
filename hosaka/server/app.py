@@ -3,9 +3,11 @@ import os
 import signal
 import subprocess
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from hosaka.chunking import split_fragments
@@ -13,6 +15,8 @@ from hosaka.config import LLM_MODEL, MAX_QUEUE
 from hosaka.library import VoiceLibrary
 from hosaka.schemas import SpeechRequest, VoiceInfo, clamp_params
 from hosaka.server.engines.base import EngineRegistry
+
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"  # bundled browser client
 
 KOKORO_PRESETS = [
     "af_heart",
@@ -284,5 +288,10 @@ def create_app(
     def shutdown():
         _do_shutdown()
         return {"status": "stopping"}
+
+    # Serve the bundled demo client at /app/ (html=True -> /app/ -> index.html).
+    # Guarded so a stripped deploy without the web dir still boots.
+    if WEB_DIR.is_dir():
+        app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
     return app

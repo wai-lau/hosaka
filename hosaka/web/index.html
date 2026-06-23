@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>hosaka</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0e0f13;
+        color: #e6e6e6;
+        font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      main { width: min(560px, 92vw); }
+      h1 { font-size: 1rem; letter-spacing: 0.3em; color: #8aa; margin: 0 0 1rem; }
+      textarea, select, input, button {
+        font: inherit;
+        color: inherit;
+        background: #16181f;
+        border: 1px solid #2a2d36;
+        border-radius: 6px;
+        padding: 0.55rem 0.7rem;
+      }
+      textarea { width: 100%; resize: vertical; min-height: 5rem; box-sizing: border-box; }
+      .row { display: flex; gap: 0.5rem; margin: 0.6rem 0; }
+      .row > * { flex: 1; }
+      button {
+        cursor: pointer;
+        background: #2b6cb0;
+        border-color: #2b6cb0;
+        font-weight: 600;
+      }
+      button:hover { background: #3a7fc4; }
+      #status { margin-top: 0.8rem; color: #889; min-height: 1.3em; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>HOSAKA</h1>
+      <textarea id="text" placeholder="Type something to speak...">Hello from the web.</textarea>
+      <div class="row">
+        <select id="backend">
+          <option value="kokoro">kokoro (realtime)</option>
+          <option value="chatterbox">chatterbox (clone)</option>
+        </select>
+        <input id="voice" value="af_heart" placeholder="voice id" />
+      </div>
+      <div class="row">
+        <button id="speak">Speak</button>
+      </div>
+      <div id="status">idle</div>
+    </main>
+    <script src="/app/app.js"></script>
+  </body>
+</html>
