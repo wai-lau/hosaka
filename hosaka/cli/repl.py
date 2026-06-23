@@ -6,9 +6,17 @@ from pathlib import Path
 
 import httpx
 
-from hosaka.audio import PacatPlayer
+from hosaka.audio import make_player
 from hosaka.cli.replcmd import parse_line
-from hosaka.config import DEFAULT_BACKEND, DEFAULT_VOICE, SERVER_PORT, SERVER_URL, VOICE_DIR
+from hosaka.config import (
+    DEFAULT_BACKEND,
+    DEFAULT_VOICE,
+    SERVER_PORT,
+    SERVER_URL,
+    VOICE_DIR,
+    native_to_pct,
+    pct_to_native,
+)
 from hosaka.library import VoiceLibrary
 
 
@@ -56,6 +64,7 @@ def _voice_backend(name, fallback):
 
 def _speak(player, backend, voice, params, text):
     body = {"input": text, "backend": backend, "voice": voice, "params": params, "stream": True}
+    buf = bytearray()
     try:
         with httpx.stream("POST", f"{SERVER_URL}/v1/audio/speech", json=body, timeout=None) as r:
             if r.status_code != 200:
@@ -63,11 +72,14 @@ def _speak(player, backend, voice, params, text):
                 return
             for raw in r.iter_bytes():
                 if raw:
-                    player.write(raw)
+                    buf.extend(raw)
     except httpx.HTTPError as exc:
         # A failure inside the engine closes the stream mid-body (status was
         # already 200). Report it and keep the REPL alive instead of crashing.
         print(f"[stream error] {exc}; see /tmp/hosaka-server.log")
+        return
+    if buf:
+        player.play(bytes(buf))
 
 
 def main():
@@ -81,7 +93,7 @@ def main():
     params = {"exaggeration": 0.5, "cfg_weight": 0.4, "temperature": 0.8, "speed": 1.0}
 
     print("hosaka ready. Type to speak; :help for commands. (^D to quit)")
-    with PacatPlayer() as player:
+    with make_player() as player:
         for line in sys.stdin:
             a = parse_line(line.rstrip("\n"))
             if a.kind == "speak":
@@ -105,15 +117,38 @@ def main():
             elif a.kind == "backend":
                 backend = a.value
             elif a.kind == "set_param":
-                name, val = a.value
-                params[name] = val
+                name, pct = a.value
+                params[name] = pct_to_native(name, pct)
+                print(f"  {name} {pct:.0f}/100 -> {params[name]:.3f}")
+            elif a.kind == "volume":
+                player.gain = pct_to_native("gain", a.value)
+                print(f"  volume {a.value:.0f}/100 -> {player.gain:.2f}x")
             elif a.kind == "voices":
                 for v in httpx.get(f"{SERVER_URL}/v1/voices").json():
-                    print(f"  {v['id']:20s} {v['backend']:11s} {v['source']}")
+                    line = f"  {v['id']:20s} {v['backend']:11s} {v['source']:9s}"
+                    if v.get("description"):
+                        line += f"  {v['description']}"
+                    print(line)
+            elif a.kind == "status":
+                print(f"  voice   {voice}  ({backend})")
+                for label, key in (
+                    ("exag", "exaggeration"),
+                    ("cfg", "cfg_weight"),
+                    ("temp", "temperature"),
+                    ("speed", "speed"),
+                ):
+                    print(
+                        f"  {label:7s} {native_to_pct(key, params[key]):3.0f}/100"
+                        f"  ({params[key]:.3f})"
+                    )
+                print(
+                    f"  volume  {native_to_pct('gain', player.gain):3.0f}/100  ({player.gain:.2f}x)"
+                )
             elif a.kind == "help":
                 print(
                     ":voice <name> | :clone <id|path> | :backend k|c | "
-                    ":exag/:cfg/:temp/:speed <f> | :voices | :quit[ --stop]"
+                    ":exag/:cfg/:temp/:speed/:vol <0-100> | :voices | :status | "
+                    ":quit[ --stop]"
                 )
             elif a.kind == "error":
                 print(f"  {a.value}")

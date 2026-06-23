@@ -24,6 +24,18 @@ KOKORO_PRESETS = [
     "bm_george",
 ]
 
+# Short blurbs for the preset voices (prefix: a=American/b=British, f/m=gender).
+KOKORO_DESC = {
+    "af_heart": "American female, warm and friendly",
+    "af_bella": "American female, bright and expressive",
+    "af_nicole": "American female, soft and intimate",
+    "af_sarah": "American female, clear and neutral",
+    "am_adam": "American male, deep and steady",
+    "am_michael": "American male, casual mid-range",
+    "bf_emma": "British female, warm and refined",
+    "bm_george": "British male, mature and measured",
+}
+
 
 def stop_llm() -> None:
     try:
@@ -68,10 +80,18 @@ def create_app(registry: EngineRegistry, library: VoiceLibrary, do_warmup: bool 
     @app.get("/v1/voices")
     def voices():
         out = [
-            VoiceInfo(id=p, backend="kokoro", source="preset").model_dump() for p in KOKORO_PRESETS
+            VoiceInfo(
+                id=p, backend="kokoro", source="preset", description=KOKORO_DESC.get(p, "")
+            ).model_dump()
+            for p in KOKORO_PRESETS
         ]
         out += [
-            VoiceInfo(id=e.id, backend="chatterbox", source=e.source).model_dump()
+            VoiceInfo(
+                id=e.id,
+                backend="chatterbox",
+                source=e.source,
+                description=e.params.get("description", ""),
+            ).model_dump()
             for e in library.list()
         ]
         return out

@@ -37,6 +37,21 @@ def test_bad_param_value_is_error():
     assert parse_line(":exag fast").kind == "error"
 
 
+def test_vol_sets_volume():
+    a = parse_line(":vol 1.8")
+    assert a.kind == "volume"
+    assert a.value == 1.8
+
+
+def test_vol_bad_value_is_error():
+    assert parse_line(":vol loud").kind == "error"
+
+
+def test_status_command():
+    assert parse_line(":status").kind == "status"
+    assert parse_line(":info").kind == "status"
+
+
 def test_quit_variants():
     assert parse_line(":quit").kind == "quit"
     assert parse_line(":quit --stop").kind == "quit_stop"

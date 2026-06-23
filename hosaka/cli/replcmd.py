@@ -31,6 +31,13 @@ def parse_line(line: str) -> ReplAction:
             return ReplAction("set_param", (_PARAMS[cmd], float(args[0])))
         except ValueError:
             return ReplAction("error", f":{cmd} needs a number")
+    if cmd == "vol":
+        if len(args) != 1:
+            return ReplAction("error", "usage: :vol <number>")
+        try:
+            return ReplAction("volume", float(args[0]))
+        except ValueError:
+            return ReplAction("error", ":vol needs a number")
     if cmd == "voice":
         if not args:
             return ReplAction("error", "usage: :voice <name> [text]")
@@ -45,6 +52,8 @@ def parse_line(line: str) -> ReplAction:
         return ReplAction("error", "usage: :backend kokoro|chatterbox")
     if cmd == "voices":
         return ReplAction("voices")
+    if cmd in ("status", "info"):
+        return ReplAction("status")
     if cmd == "help":
         return ReplAction("help")
     if cmd == "quit":

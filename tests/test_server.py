@@ -38,6 +38,16 @@ def test_voices_lists_presets_and_library(tmp_path):
     assert "myclone" in ids  # a library clip
 
 
+def test_voices_include_descriptions(tmp_path):
+    client, lib = _client(tmp_path)
+    seed = tmp_path / "s.wav"
+    seed.write_bytes(b"RIFFfake")
+    lib.add("baked", seed, source="bake", params={"description": "a gruff narrator"})
+    voices = {v["id"]: v for v in client.get("/v1/voices").json()}
+    assert voices["af_heart"]["description"]  # presets get a hardcoded blurb
+    assert voices["baked"]["description"] == "a gruff narrator"  # from bake params
+
+
 def test_speech_streams_pcm_bytes(tmp_path):
     client, _ = _client(tmp_path)
     r = client.post(

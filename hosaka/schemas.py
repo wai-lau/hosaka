@@ -21,6 +21,7 @@ class VoiceInfo(BaseModel):
     id: str
     backend: str
     source: str
+    description: str = ""
 
 
 def _clamp(x, lo, hi):
