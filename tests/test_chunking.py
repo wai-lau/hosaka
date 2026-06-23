@@ -35,6 +35,19 @@ def test_word_hyphen_is_left_alone():
     assert split_fragments("well-being matters.") == ["well-being matters."]
 
 
+def test_long_single_sentence_not_cut_mid_phrase():
+    # A 71-char sentence under max_chars stays whole -- no first-fragment seam.
+    t = "You were told repeatedly and in no uncertain terms to never touch that."
+    assert split_fragments(t) == [t]
+
+
+def test_first_max_chars_still_shrinks_when_requested():
+    # The streaming opt-in still works when explicitly asked for.
+    t = "You were told repeatedly and in no uncertain terms to never touch that."
+    out = split_fragments(t, first_max_chars=40)
+    assert len(out[0]) <= 40
+
+
 def test_every_fragment_capped_for_long_run_on_sentence():
     # One long comma-spliced sentence (single period) must not produce any
     # fragment over max_chars -- that is what blew past Chatterbox's limit.

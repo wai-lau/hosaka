@@ -11,13 +11,20 @@ def normalize_punct(text: str) -> str:
     return _DASH.sub(", ", text)
 
 
-def split_fragments(text: str, first_max_chars: int = 60, max_chars: int = 280) -> list[str]:
+def split_fragments(
+    text: str, first_max_chars: int | None = None, max_chars: int = 280
+) -> list[str]:
     """Break text into fragments small enough for any engine to synth safely.
 
-    `first_max_chars` keeps the very first fragment short so first audio is
-    heard fast. `max_chars` caps *every* fragment: Chatterbox corrupts the
+    Fragments break only at sentence boundaries, sub-split at clause/word
+    boundaries when a sentence exceeds `max_chars` -- so a seam never lands
+    mid-phrase. `max_chars` caps *every* fragment: Chatterbox corrupts the
     CUDA context (device-side assert) if a single fragment exceeds its token
     limit, so an uncapped long sentence must never reach the engine whole.
+
+    `first_max_chars` optionally shrinks just the first fragment for fast
+    first-audio when streaming; leave it None (playback now buffers the whole
+    utterance, so an early cut only adds a mid-phrase seam with no latency win).
     """
     text = normalize_punct(text.strip())
     if not text:
@@ -34,8 +41,8 @@ def split_fragments(text: str, first_max_chars: int = 60, max_chars: int = 280) 
             pieces[0] = " " + pieces[0]  # preserve the inter-sentence space
         out.extend(pieces)
 
-    # Shrink only the first emitted fragment for fast first-audio latency.
-    if len(out[0]) > first_max_chars:
+    # Optionally shrink the first fragment for fast first-audio (streaming only).
+    if first_max_chars is not None and len(out[0]) > first_max_chars:
         out = _wrap(out[0], first_max_chars) + out[1:]
     return out
 
