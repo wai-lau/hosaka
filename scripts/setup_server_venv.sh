@@ -35,7 +35,10 @@ echo "=== [5/6] Kokoro --no-deps + G2P deps (misaki) + loguru ==="
 "$VENV/bin/pip" install "misaki[en]" huggingface_hub loguru
 
 echo "=== [6/6] server deps ==="
-"$VENV/bin/pip" install fastapi uvicorn httpx pydantic soundfile numpy
+# websockets: uvicorn needs it to accept the WS /v1/audio/stream upgrade;
+# without a WS lib uvicorn 404s the upgrade (Starlette's TestClient does WS
+# in-process, so the test suite does not surface this -- only a real run does).
+"$VENV/bin/pip" install fastapi uvicorn websockets httpx pydantic soundfile numpy
 
 echo "=== verify torch sees the GPU (real matmul) ==="
 "$VENV/bin/python" scripts/verify_gpu.py
