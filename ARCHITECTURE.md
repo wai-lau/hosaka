@@ -109,15 +109,35 @@ Other endpoints: `GET /health` (ready when both models are warmed),
   `manifest.json` mapping voice-id → {path, source, params, created}. Lives in
   `~/.local/share/hosaka/voices` — outside the repo, so personal recordings never
   enter git. The repo ships a couple of Kokoro-rendered sample seeds.
-- **Audio out** (`hosaka/audio.py`): `pacat --raw` from `pulseaudio-utils`,
-  spawned once per REPL session. Uses the WSLg PulseAudio server directly,
-  avoiding the fragile PortAudio/ALSA shim.
+- **Audio out** (`hosaka/audio.py`): `make_player()` picks the path. Native
+  Linux → `PacatPlayer` (`pacat --raw`, PulseAudio). Under WSLg the RDP audio
+  bridge adds static to all in-WSL playback, so audio plays on the **Windows**
+  side instead: `FfplayPlayer` streams float32 PCM into a persistent `ffplay.exe`
+  (gapless — fragment N plays while N+1 synthesizes, with a `PIPELINE_LEAD_MS`
+  cushion for Chatterbox's RTF ~1), falling back to `WinSoundPlayer` (whole-WAV
+  per utterance) if ffmpeg isn't on the Windows side.
 
 ## VRAM lifecycle
 
 On server start the lifespan hook best-effort `ollama stop gpt-oss:20b` to free
 VRAM, then loads and warms both models (a tiny synth each) so the first real
 request is not a cold start. Models stay pinned for the session.
+
+## Running it / startup
+
+`scripts/start_server.sh` is the canonical launcher (uvicorn on
+`127.0.0.1:8123`). It runs on WSL startup via the systemd *user* unit
+`hosaka-server.service` (tracked under `scripts/systemd/`); `loginctl
+enable-linger` makes it come up at boot without an interactive login. The REPL
+also auto-spawns the server if it is not already up.
+
+## Remote / web access
+
+The server binds loopback only. For remote use it is consumed by a separate app
+(exec-fn, served at `wai-lau.net/hosaka`) that reverse-proxies the WebSocket to
+this box over an SSH tunnel and gates it behind that app's session-cookie auth —
+no ports are opened on the home box. The bundled `/app/` client is for local
+testing.
 
 ## Why two venvs
 
@@ -136,7 +156,7 @@ never imports Parler. See `scripts/setup_server_venv.sh` and
 | `hosaka/chunking.py` | sentence-fragment splitter (low-latency lever) |
 | `hosaka/library.py` | voice library + JSON manifest |
 | `hosaka/schemas.py` | request/response models, param clamping |
-| `hosaka/audio.py` | `pacat` streaming player |
+| `hosaka/audio.py` | playback players (ffplay / pacat / winsound) + `make_player` selection |
 | `hosaka/server/app.py` | FastAPI app: lifespan, routes, GPU serialization |
 | `hosaka/server/main.py` | wires engines + library into the app (uvicorn entry) |
 | `hosaka/server/engines/base.py` | `Engine` protocol + `EngineRegistry` |

@@ -37,10 +37,15 @@ python3.12 -m venv .venv-server
   "git+https://github.com/davidbrowne17/chatterbox-streaming.git" --no-deps
 .venv-server/bin/pip install transformers accelerate scipy numpy peft soundfile
 .venv-server/bin/pip install kokoro --no-deps
-.venv-server/bin/pip install soundfile numpy fastapi uvicorn httpx pydantic
+.venv-server/bin/pip install soundfile numpy fastapi uvicorn websockets httpx pydantic
 sudo apt install -y espeak-ng pulseaudio-utils
 .venv-server/bin/python scripts/verify_gpu.py   # must print capability (12, 0) + matmul ok
 ```
+
+`websockets` is required — uvicorn needs it to accept the `WS /v1/audio/stream`
+upgrade. On WSLg, also install ffmpeg on the **Windows** side for gapless
+streaming playback (`winget install Gyan.FFmpeg`); without it, playback falls
+back to buffered whole-utterance audio.
 
 ### Bake venv (Parler, isolated)
 
@@ -83,6 +88,24 @@ Bake a described voice (runs offline, in the bake venv):
 ```
 
 Then in the REPL: `:clone calm_brit`, speak a line.
+
+## Web client + running as a service
+
+The server also serves a browser demo client at `/app/` and a WebSocket at
+`/v1/audio/stream` (see `docs/API.md`). Run it persistently — and on WSL
+startup:
+
+```
+cp scripts/systemd/hosaka-server.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now hosaka-server.service
+loginctl enable-linger "$USER"   # start at WSL boot, no login needed
+```
+
+Then open `http://127.0.0.1:8123/app/`. (`scripts/start_server.sh` is the
+launcher the unit runs; you can also run it directly.) For remote access the
+server is consumed by a separate front end behind its own auth — see
+`ARCHITECTURE.md` (Remote / web access).
 
 ## Realtime vs quality
 

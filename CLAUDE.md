@@ -39,7 +39,10 @@ replcmd, audio, server/app with a FakeEngine) run in `.venv-dev`.
   keep it isolated in `.venv-bake` — never let its deps near the server.
 - **Audio:** install only `pulseaudio-utils` (client). NEVER `apt install
   pulseaudio` (the daemon) — it breaks WSLg audio. Never install Linux GPU
-  drivers or `cuda`/`cuda-drivers` meta-packages inside WSL.
+  drivers or `cuda`/`cuda-drivers` meta-packages inside WSL. WSLg's RDP bridge
+  adds static to in-WSL playback, so on WSLg audio plays on the Windows side
+  (`ffplay.exe` via ffmpeg, or a buffered `SoundPlayer` fallback); `pacat` is the
+  native-Linux path. See `make_player` in `hosaka/audio.py`.
 - **Chatterbox cloning being ~2-3s is INTENTIONAL** (quality mode — the card
   can't stream this model under 1s; see ARCHITECTURE.md). Do not "optimize" it
   into per-chunk streaming; that reintroduces stutter. Realtime is the Kokoro
@@ -58,6 +61,10 @@ replcmd, audio, server/app with a FakeEngine) run in `.venv-dev`.
   reintroduce an untracked `run_in_executor` future.
 - Personal voice data lives in `~/.local/share/hosaka/voices` (untracked).
   Only the couple of sample seeds under `hosaka/sample_voices/` are committed.
+- The server runs persistently as the systemd user unit `hosaka-server.service`
+  (execs `scripts/start_server.sh`), linger-enabled so it starts on WSL boot.
+  Bound to `127.0.0.1:8123`; the REPL also auto-spawns it if down. For remote
+  use it is reverse-proxied by the exec-fn app — see ARCHITECTURE.md.
 
 ## Linting
 
