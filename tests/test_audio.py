@@ -251,6 +251,35 @@ def test_ffplay_broken_pipe_is_handled(capsys):
     assert "ffplay" in capsys.readouterr().out.lower()  # reported, no raise
 
 
+def test_ffplay_relaunches_after_broken_pipe():
+    # First process's stdin raises once (broken pipe); a later write must
+    # relaunch a fresh process and deliver bytes to it.
+    class _OneShotBrokenProc(_FakeProc):
+        def __init__(self):
+            super().__init__()
+
+            def boom(_):
+                raise BrokenPipeError()
+
+            self.stdin.write = boom
+
+    procs = []
+
+    def fake_popen(cmd, **kw):
+        # first call -> broken proc, subsequent calls -> healthy procs
+        p = _OneShotBrokenProc() if not procs else _FakeProc()
+        procs.append(p)
+        return p
+
+    data = np.full(8, 0.5, dtype=np.float32).astype("<f4").tobytes()
+    p = FfplayPlayer("ffplay.exe", gain=1.0, lead_ms=0, popen=fake_popen)
+    with p:
+        p.write(data)  # broken pipe -> _proc set to None
+        p.write(data)  # must relaunch and deliver
+    assert len(procs) == 2  # a second process was launched
+    assert procs[1].stdin.getvalue() == data  # bytes delivered to the new proc
+
+
 def test_make_player_ffplay_when_present(monkeypatch):
     monkeypatch.setattr(audio, "on_wslg", lambda: True)
     monkeypatch.setattr(audio, "_find_ffplay", lambda: "ffplay.exe")

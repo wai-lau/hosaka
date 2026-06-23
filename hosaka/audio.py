@@ -292,6 +292,7 @@ class FfplayPlayer:
         if self._hold:
             self._feed(bytes(self._hold))
         self._hold = bytearray()
+        self._tail = b""  # don't bleed a partial float into the next utterance
         self._primed = False
 
     def play(self, pcm_bytes):
