@@ -37,6 +37,23 @@ def _wslpath_w(p: str) -> str:
     return subprocess.check_output(["wslpath", "-w", p]).decode().strip()
 
 
+def _gain_align(chunk: bytes, tail: bytes, gain: float) -> tuple[bytes, bytes]:
+    """Apply gain to a byte chunk on 4-byte (float32) boundaries.
+
+    Network chunks may split a float; combine with the held tail, process only
+    the 4-aligned prefix, and return the new leftover tail.
+    """
+    buf = tail + chunk
+    n = len(buf) - (len(buf) % 4)
+    aligned, new_tail = buf[:n], buf[n:]
+    if not aligned:
+        return b"", new_tail
+    arr = np.frombuffer(aligned, dtype="<f4")
+    if gain != 1.0:
+        arr = np.clip(arr * gain, -1.0, 1.0)
+    return arr.astype("<f4").tobytes(), new_tail
+
+
 class PacatPlayer:
     """Streams raw PCM to PulseAudio via pacat. Correct for native Linux audio."""
 

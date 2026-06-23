@@ -30,6 +30,11 @@ PLAYBACK_LATENCY_MSEC = 800
 # its wake-from-idle clips silence instead of the first phonemes.
 PLAYBACK_LEAD_SILENCE_MS = 200
 
+# Lead buffer for the streaming (ffplay) player: bytes are withheld until this
+# much audio is buffered, then released, giving the player a cushion to ride
+# over per-fragment synth jitter at Chatterbox's RTF ~1.
+PIPELINE_LEAD_MS = 1500
+
 # REPL knobs are entered on a uniform 0-100 scale. 50 is the DEFAULT (neutral)
 # value for each knob, 0 and 100 the extremes -- so the map is piecewise linear,
 # anchored at the default rather than the range midpoint. (min, default, max);

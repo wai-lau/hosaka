@@ -102,3 +102,23 @@ def test_make_player_selects_by_environment(monkeypatch):
     assert isinstance(audio.make_player(), WinSoundPlayer)
     monkeypatch.setattr(audio, "on_wslg", lambda: False)
     assert isinstance(audio.make_player(), PacatPlayer)
+
+
+def test_gain_align_scales_and_holds_partial_float():
+    from hosaka.audio import _gain_align
+
+    src = np.full(4, 0.2, dtype=np.float32).astype("<f4").tobytes()  # 16 bytes
+    # Feed 10 bytes: 2 whole floats + 2 leftover; gain 2.0
+    out, tail = _gain_align(src[:10], b"", 2.0)
+    assert len(out) == 8 and len(tail) == 2
+    assert np.allclose(np.frombuffer(out, dtype="<f4"), 0.4, atol=1e-6)
+    # Next call prepends the tail and completes the floats
+    out2, tail2 = _gain_align(src[10:], tail, 2.0)
+    assert tail2 == b""
+    assert np.allclose(np.frombuffer(out2, dtype="<f4"), 0.4, atol=1e-6)
+
+
+def test_pipeline_lead_ms_default():
+    from hosaka.config import PIPELINE_LEAD_MS
+
+    assert PIPELINE_LEAD_MS == 1500
