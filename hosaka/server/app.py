@@ -28,27 +28,12 @@ from hosaka.server.engines.base import EngineRegistry
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"  # bundled browser client
 
-KOKORO_PRESETS = [
-    "af_heart",
-    "af_bella",
-    "af_nicole",
-    "af_sarah",
-    "am_adam",
-    "am_michael",
-    "bf_emma",
-    "bm_george",
-]
+# Curated to a single preset by choice -- the other ~28 Kokoro voices are not
+# offered. (af_nicole = American female, soft and intimate.)
+KOKORO_PRESETS = ["af_nicole"]
 
-# Short blurbs for the preset voices (prefix: a=American/b=British, f/m=gender).
 KOKORO_DESC = {
-    "af_heart": "American female, warm and friendly",
-    "af_bella": "American female, bright and expressive",
     "af_nicole": "American female, soft and intimate",
-    "af_sarah": "American female, clear and neutral",
-    "am_adam": "American male, deep and steady",
-    "am_michael": "American male, casual mid-range",
-    "bf_emma": "British female, warm and refined",
-    "bm_george": "British male, mature and measured",
 }
 
 
@@ -234,6 +219,11 @@ def create_app(
             ).model_dump()
             for p in KOKORO_PRESETS
         ]
+        # Library clips used only as an RVC source (e.g. Charlie's Chatterbox
+        # clone) are not standalone voices -- hide them from the listing.
+        rvc_sources = {
+            s["source"] for s in RVC_VOICES.values() if s.get("source_backend") == "chatterbox"
+        }
         out += [
             VoiceInfo(
                 id=e.id,
@@ -242,6 +232,7 @@ def create_app(
                 description=e.params.get("description", ""),
             ).model_dump()
             for e in library.list()
+            if e.id not in rvc_sources
         ]
         if registry.piper is not None:
             out += [

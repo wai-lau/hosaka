@@ -13,7 +13,7 @@ DEFAULT_VOICE = "glados"
 
 # Voice Kokoro warms up on -- a real Kokoro preset, independent of the REPL's
 # DEFAULT_VOICE (which may point at another backend, e.g. piper/glados).
-KOKORO_WARMUP_VOICE = "af_heart"
+KOKORO_WARMUP_VOICE = "af_nicole"
 
 # Max requests admitted at once (the one running on the GPU + those waiting in
 # line). The GPU still serves strictly one at a time; this only bounds how deep

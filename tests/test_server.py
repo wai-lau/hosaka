@@ -51,7 +51,7 @@ def test_voices_lists_presets_and_library(tmp_path):
     seed.write_bytes(b"RIFFfake")
     lib.add("myclone", seed, source="recording")
     ids = {v["id"] for v in client.get("/v1/voices").json()}
-    assert "af_heart" in ids  # a preset
+    assert "af_nicole" in ids  # a preset
     assert "myclone" in ids  # a library clip
 
 
@@ -61,7 +61,7 @@ def test_voices_include_descriptions(tmp_path):
     seed.write_bytes(b"RIFFfake")
     lib.add("baked", seed, source="bake", params={"description": "a gruff narrator"})
     voices = {v["id"]: v for v in client.get("/v1/voices").json()}
-    assert voices["af_heart"]["description"]  # presets get a hardcoded blurb
+    assert voices["af_nicole"]["description"]  # presets get a hardcoded blurb
     assert voices["baked"]["description"] == "a gruff narrator"  # from bake params
 
 
@@ -69,7 +69,7 @@ def test_speech_streams_pcm_bytes(tmp_path):
     client, _ = _client(tmp_path)
     r = client.post(
         "/v1/audio/speech",
-        json={"input": "Hello. World.", "backend": "kokoro", "voice": "af_heart"},
+        json={"input": "Hello. World.", "backend": "kokoro", "voice": "af_nicole"},
     )
     assert r.status_code == 200
     assert len(r.content) > 0
@@ -177,7 +177,7 @@ def test_speech_engine_error_is_not_silent(tmp_path):
     with pytest.raises(RuntimeError, match="engine boom"):
         client.post(
             "/v1/audio/speech",
-            json={"input": "hi", "backend": "kokoro", "voice": "af_heart"},
+            json={"input": "hi", "backend": "kokoro", "voice": "af_nicole"},
         )
 
 
@@ -203,7 +203,7 @@ def test_fatal_cuda_error_triggers_shutdown(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="device-side assert"):
         client.post(
             "/v1/audio/speech",
-            json={"input": "hi", "backend": "kokoro", "voice": "af_heart"},
+            json={"input": "hi", "backend": "kokoro", "voice": "af_nicole"},
         )
     assert hits.get("hit")
 
@@ -220,7 +220,7 @@ def test_ordinary_engine_error_does_not_shutdown(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="engine boom"):
         client.post(
             "/v1/audio/speech",
-            json={"input": "hi", "backend": "kokoro", "voice": "af_heart"},
+            json={"input": "hi", "backend": "kokoro", "voice": "af_nicole"},
         )
     assert not hits.get("hit")
 
@@ -231,7 +231,7 @@ def test_lock_released_after_request(tmp_path):
     for _ in range(3):
         r = client.post(
             "/v1/audio/speech",
-            json={"input": "Hello.", "backend": "kokoro", "voice": "af_heart"},
+            json={"input": "Hello.", "backend": "kokoro", "voice": "af_nicole"},
         )
         assert r.status_code == 200
 
@@ -267,7 +267,7 @@ class GatedEngine:
         pass
 
 
-KOKORO_REQ = {"input": "hi", "backend": "kokoro", "voice": "af_heart"}
+KOKORO_REQ = {"input": "hi", "backend": "kokoro", "voice": "af_nicole"}
 
 
 async def _wait(flag: threading.Event):
@@ -347,7 +347,7 @@ def _drain_ws(ws):
 def test_ws_streams_pcm_frames(tmp_path):
     client, _ = _client(tmp_path)
     with client.websocket_connect("/v1/audio/stream") as ws:
-        ws.send_json({"input": "Hello.", "backend": "kokoro", "voice": "af_heart"})
+        ws.send_json({"input": "Hello.", "backend": "kokoro", "voice": "af_nicole"})
         pcm = _drain_ws(ws)
     assert len(pcm) > 0
     assert len(pcm) % 4 == 0  # float32 == 4 bytes/sample
@@ -361,7 +361,7 @@ def test_ws_unknown_voice_sends_error_and_stays_open(tmp_path):
         assert err["type"] == "error"
         assert "nicole" in err["detail"]
         # connection survives a bad request: a good one still streams.
-        ws.send_json({"input": "hi", "backend": "kokoro", "voice": "af_heart"})
+        ws.send_json({"input": "hi", "backend": "kokoro", "voice": "af_nicole"})
         assert len(_drain_ws(ws)) > 0
 
 
@@ -369,7 +369,7 @@ def test_ws_multiple_utterances_one_connection(tmp_path):
     client, _ = _client(tmp_path)
     with client.websocket_connect("/v1/audio/stream") as ws:
         for _ in range(3):
-            ws.send_json({"input": "hi", "backend": "kokoro", "voice": "af_heart"})
+            ws.send_json({"input": "hi", "backend": "kokoro", "voice": "af_nicole"})
             assert len(_drain_ws(ws)) > 0
 
 
