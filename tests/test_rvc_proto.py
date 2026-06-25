@@ -60,6 +60,7 @@ def test_request_roundtrips_params_and_pcm():
         protect=0.33,
         rms_mix_rate=0.25,
         passes=3,
+        gate=True,
     )
     d = read_request(io.BytesIO(raw))
     assert d["voice"] == "charlie"
@@ -67,6 +68,7 @@ def test_request_roundtrips_params_and_pcm():
     assert d["index_rate"] == 0.5
     assert d["f0_method"] == "rmvpe"
     assert d["passes"] == 3
+    assert d["gate"] is True
     assert d["pcm"] == pcm
 
 

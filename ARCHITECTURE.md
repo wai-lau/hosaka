@@ -143,22 +143,28 @@ Charlie Morningstar and future RVC voices are handled by a second character-voic
 path: RVC v2 (Retrieval-based Voice Conversion). The data flow per fragment, inside
 ONE held GPU slot:
 
-1. `RvcEngine` asks its embedded Kokoro instance to synthesize the **source**
-   PCM — the Kokoro voice is the character's *match*: RVC preserves the source's
-   pitch contour, prosody and delivery and swaps only timbre, so the source's
-   energy carries through. `resolve_source` validates it is the character's
-   gender + accent. Charlie = `af_aoede` (bright/expressive), `transpose` +1.
+1. `RvcEngine` asks a **per-voice source engine** to synthesize the **source**
+   PCM. RVC preserves the source's pitch contour, prosody and delivery and swaps
+   only timbre, so emotion has to come from the source. Kokoro is flat
+   (realtime), so an expressive character instead sources from **Chatterbox
+   cloning a real reference clip**: Charlie = a Chatterbox clone of `charlie_cb`
+   (exaggeration 0.7), which carries the emotion. A Kokoro-source voice still
+   follows the match-the-character preset rule (`resolve_source`); a
+   Chatterbox-clone source is a library voice id. (`sources` maps backend ->
+   engine; each voice picks one via `source_backend`.)
 2. The full fragment PCM is piped to the `.venv-rvc` GPU sidecar
    (`rvc_sidecar.py`) over the `rvc_proto` wire (JSON header + length-prefixed
    float32).
 3. The sidecar runs: HuBERT/ContentVec encode → rmvpe F0 estimation (+transpose
    if configured) → faiss index retrieval → net_g synthesis at the model's native
-   **40 kHz** → resample 40k→24k → framed PCM back on the pipe.
+   **32 kHz** (erika) → resample 32k→24k. RVC hallucinates phonemes in the
+   source's silent gaps, so when the voice sets `gate` the sidecar mutes the
+   output wherever the source was silent. Framed PCM goes back on the pipe.
 4. `RvcEngine` yields the converted PCM frames.
 
-`RvcEngine` wraps Kokoro as its source, so `app.py`'s request path, GPU queue,
-and serialization are completely unchanged. Both GPU operations (Kokoro source in
-the server process, RVC conversion in the sidecar process) run sequentially inside
+The source engine runs in the server process and RVC in the sidecar process, so
+`app.py`'s request path, GPU queue, and serialization are completely unchanged.
+Both GPU operations run sequentially inside
 the one held slot per request. The two CUDA contexts coexist at roughly
 5-6 GB (server) + 0.5-1 GB (sidecar) ≈ 7 GB of 16.
 

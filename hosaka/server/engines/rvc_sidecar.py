@@ -57,6 +57,30 @@ def load_voices(specs):
     return voices
 
 
+def _silence_gate(source, converted):
+    """Mute the converted audio wherever the SOURCE is silent. RVC hallucinates
+    phonemes in silent gaps (HuBERT/F0 have nothing real there), but the source's
+    silence marks where there should be none. Both are float32 @ SAMPLE_RATE and
+    RVC preserves timing, so they align frame-for-frame."""
+    n = min(len(source), len(converted))
+    if n == 0:
+        return converted
+    src, conv = source[:n], converted[:n]
+    fl = int(0.025 * SAMPLE_RATE)
+    hop = max(1, fl // 2)
+    nf = 1 + max(0, (n - fl) // hop)
+    env = np.array(
+        [np.sqrt(np.mean(src[i * hop : i * hop + fl] ** 2)) for i in range(nf)],
+        dtype=np.float32,
+    )
+    if env.max() <= 0:
+        return conv
+    mask_f = (env > 0.03 * env.max()).astype(np.float32)
+    mask_f = np.clip(np.convolve(mask_f, np.ones(5) / 5, mode="same"), 0, 1)  # smooth -> no clicks
+    mask = np.clip(np.interp(np.arange(n), np.arange(nf) * hop, mask_f), 0, 1).astype(np.float32)
+    return conv * mask
+
+
 def convert(rvc, req, out):
     """Convert one request's source PCM to the target and stream it back.
 
@@ -86,7 +110,10 @@ def convert(rvc, req, out):
         wav = wav.mean(axis=1)
     if sr != SAMPLE_RATE:
         wav = resample_poly(wav, SAMPLE_RATE, sr)
-    f32 = np.ascontiguousarray(wav.astype(np.float32), dtype="<f4")
+    wav = wav.astype(np.float32)
+    if req.get("gate"):
+        wav = _silence_gate(src, wav)  # src is the source PCM @ 24k, read above
+    f32 = np.ascontiguousarray(wav, dtype="<f4")
     out.write(pack_audio(f32.tobytes()))
     out.flush()
 

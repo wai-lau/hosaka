@@ -69,14 +69,21 @@ and tested in `.venv-dev` the same way.
   HuBERT and rmvpe checkpoints in its own package directory; `setup_rvc_venv.sh`
   pre-seeds them via symlinks from `~/.local/share/hosaka/rvc/` so the
   auto-download never runs. The sidecar takes no `--hubert`/`--rmvpe` args.
-- **RVC source = match-the-character.** RVC keeps the source's pitch contour,
-  prosody and delivery, swapping only timbre -- so a flat "neutral" base yields a
-  flat character. Each `RVC_VOICES` entry picks the Kokoro `source` whose energy
-  fits the character (Charlie = `af_aoede`, bright/expressive) plus a per-voice
-  `transpose` (Charlie +1). `resolve_source()` validates only that the source is
-  the right gender+accent (the Kokoro `af_`/`am_`/`bf_`/`bm_` prefix), a loud
-  `ValueError` otherwise. Kokoro English = American or British only; no other
-  accents.
+- **RVC source is per-voice pluggable; emotion comes from the source.** RVC keeps
+  the source's prosody/delivery and swaps only timbre, so a flat source yields a
+  flat character. Kokoro is flat (realtime), so an expressive character sources
+  from **Chatterbox cloning a real reference clip**: Charlie = Chatterbox clone of
+  the `charlie_cb` library voice (exaggeration 0.7) -> RVC erika. A voice sets
+  `source_backend` (`kokoro`|`chatterbox`) + `source` (+ `source_params`); the
+  `sources` dict (in `_make_rvc`) maps backend -> engine. Kokoro sources still
+  follow match-the-character -- `resolve_source` validates the
+  `af_`/`am_`/`bf_`/`bm_` prefix (American/British only); a Chatterbox-clone
+  source is just a library voice id. This is the quality path (~4-5s first audio),
+  not realtime.
+- **RVC silence gate.** RVC hallucinates phonemes in the source's silent gaps.
+  Mitigated globally by `protect` 0.5 + `index_rate` 0.3, plus the sidecar's
+  silence gate (the per-voice `gate` flag) which mutes the output wherever the
+  source is silent.
 - **RVC sidecar redirects stdout to stderr at startup.** rvc-python and fairseq
   print model-load messages to stdout, but the sidecar's stdout is the binary
   frame pipe. fd 1 is redirected to stderr before any imports so library chatter

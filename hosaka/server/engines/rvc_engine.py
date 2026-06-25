@@ -29,7 +29,7 @@ class RvcEngine:
 
     def __init__(
         self,
-        source_engine,
+        sources,
         sidecar_cmd,
         *,
         voices,
@@ -37,7 +37,9 @@ class RvcEngine:
         cwd=None,
         stderr=None,
     ):
-        self._source = source_engine
+        # sources: {backend -> Engine} (e.g. {"kokoro": ..., "chatterbox": ...}).
+        # Each RVC voice picks which engine generates its source audio.
+        self._sources = dict(sources)
         self._cmd = list(sidecar_cmd)
         self._voices = dict(voices)
         self._knobs = dict(knobs)
@@ -61,8 +63,11 @@ class RvcEngine:
 
     def _source_pcm(self, text, voice, params) -> bytes:
         cfg = self._voices[voice]
-        speed = float(params.get("speed", 1.0))
-        chunks = list(self._source.stream(text, cfg["source"], {"speed": speed}))
+        engine = self._sources[cfg.get("source_backend", "kokoro")]
+        # A voice may pin its own source params (e.g. Chatterbox exaggeration for
+        # an expressive clone); otherwise pass through the request speed (Kokoro).
+        src_params = cfg.get("source_params") or {"speed": float(params.get("speed", 1.0))}
+        chunks = list(engine.stream(text, cfg["source"], src_params))
         if not chunks:
             return b""
         arr = np.concatenate([np.asarray(c, dtype=np.float32).reshape(-1) for c in chunks])
@@ -80,6 +85,7 @@ class RvcEngine:
             protect=float(self._knobs["protect"]),
             rms_mix_rate=float(self._knobs["rms_mix_rate"]),
             passes=int(cfg.get("passes", 1)),
+            gate=bool(cfg.get("gate", False)),
         )
         proc = self._ensure_proc()
         try:

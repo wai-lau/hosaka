@@ -135,11 +135,13 @@ _SOURCE_PREFIX = {
     ("male", "british"): "bm_",
 }
 
-# Fixed conversion knobs for MVP (no per-request RVC knobs).
+# Conversion knobs. index_rate low + protect high cut the phonemes RVC
+# hallucinates in the source's silent gaps; the rest is muted by the silence
+# gate (see rvc_sidecar).
 RVC_KNOBS = {
-    "index_rate": 0.5,
+    "index_rate": 0.3,
     "f0_method": "rmvpe",
-    "protect": 0.33,
+    "protect": 0.5,
     "rms_mix_rate": 0.25,
 }
 
@@ -150,21 +152,34 @@ RVC_VOICES = {
         "model_sr": 32000,  # native (Erika Henningsen v2); sidecar resamples 32k -> 24k
         "gender": "female",
         "accent": "american",
-        "source": "af_aoede",  # match-the-character: bright/expressive fits Charlie
-        "transpose": 1,  # semitones, tuned by ear
-        "passes": 2,  # double-pass RVC -- locks Charlie's timbre harder (chosen by ear)
-        "description": "Charlie Morningstar (Hazbin Hotel), RVC V2 (Erika Henningsen)",
+        # The source is a Chatterbox CLONE of a real Charlie clip -- it carries
+        # the emotion Kokoro can't -- then RVC locks the timbre and the silence
+        # gate mutes RVC's gap-hallucinations using the source's silence.
+        "source_backend": "chatterbox",
+        "source": "charlie_cb",  # a library clone of the reference clip
+        "source_params": {"exaggeration": 0.7, "cfg_weight": 0.3, "temperature": 0.8},
+        "transpose": 0,  # the clone is already at Charlie's pitch
+        "passes": 1,  # single pass -- a 2nd flattens the emotion
+        "gate": True,  # mute the output where the source is silent
+        "description": "Charlie Morningstar (Hazbin Hotel) -- Chatterbox clone + RVC erika",
     },
 }
 
 
 def resolve_source(voice_cfg: dict) -> str:
-    """The Kokoro source preset for an RVC voice. match-the-character: each voice
-    picks the source whose energy/timbre fits the character -- RVC keeps the
-    source's pitch contour, prosody and delivery, swapping only timbre, so a flat
-    "neutral" base yields a flat character. The source is validated only for
-    gender + accent (the Kokoro id prefix); a wrong-gender/accent source is a loud
-    ValueError, and KeyError if Kokoro has no base for the tuple."""
+    """The source voice id for an RVC voice's source engine.
+
+    For a Kokoro source (the default backend), match-the-character: validate only
+    that the source is the right gender + accent (the Kokoro id prefix) -- RVC
+    keeps the source's prosody/delivery, swapping only timbre, so a flat neutral
+    base yields a flat character. A wrong-gender/accent source is a loud
+    ValueError, KeyError if Kokoro has no base for the tuple.
+
+    For a non-Kokoro source (e.g. a Chatterbox clone of a real reference clip)
+    the prefix rule does not apply -- the source is a library voice id returned
+    as-is."""
+    if voice_cfg.get("source_backend", "kokoro") != "kokoro":
+        return voice_cfg["source"]
     prefix = _SOURCE_PREFIX[(voice_cfg["gender"], voice_cfg["accent"])]
     src = voice_cfg["source"]
     if not src.startswith(prefix):

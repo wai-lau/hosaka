@@ -34,11 +34,12 @@ def _make_piper():
     return PiperEngine(cmd, voices=list(available))
 
 
-def _make_rvc(source_engine):
+def _make_rvc(sources):
     """Build the RVC sidecar engine, or None if it isn't set up. Missing the
     .venv-rvc interpreter, the HuBERT/rmvpe assets, or every voice's model+index
-    degrades gracefully: the server runs the other engines. RVC uses Kokoro as
-    its neutral audio source, so the engine is shared in."""
+    degrades gracefully: the server runs the other engines. `sources` maps a
+    backend name to the engine that generates a voice's source audio (Kokoro for
+    realtime presets, Chatterbox for an expressive cloned character source)."""
     available = {
         vid: spec
         for vid, spec in RVC_VOICES.items()
@@ -56,19 +57,23 @@ def _make_rvc(source_engine):
     for vid, spec in available.items():
         cmd += ["--voice", f"{vid}={spec['model']}:{spec['index']}"]
         voices[vid] = {
+            "source_backend": spec.get("source_backend", "kokoro"),
             "source": resolve_source(spec),
+            "source_params": spec.get("source_params"),
             "transpose": spec["transpose"],
             "passes": spec.get("passes", 1),
+            "gate": spec.get("gate", False),
         }
-    return RvcEngine(source_engine, cmd, voices=voices, knobs=dict(RVC_KNOBS))
+    return RvcEngine(sources, cmd, voices=voices, knobs=dict(RVC_KNOBS))
 
 
 _library = VoiceLibrary(VOICE_DIR)
 _kokoro = KokoroEngine()
+_chatterbox = ChatterboxEngine(_library)
 _registry = EngineRegistry(
     kokoro=_kokoro,
-    chatterbox=ChatterboxEngine(_library),
+    chatterbox=_chatterbox,
     piper=_make_piper(),
-    rvc=_make_rvc(_kokoro),
+    rvc=_make_rvc({"kokoro": _kokoro, "chatterbox": _chatterbox}),
 )
 app = create_app(_registry, _library, do_warmup=True)

@@ -34,16 +34,22 @@ def _voices():
         "charlie": {"source": "af_sarah", "transpose": 2},
         "boom": {"source": "af_sarah", "transpose": 0},
         "die": {"source": "af_sarah", "transpose": 0},
-        "echo": {"source": "af_sarah", "transpose": 7, "passes": 2},
+        "echo": {"source": "af_sarah", "transpose": 7, "passes": 2, "gate": True},
+        "cbvoice": {
+            "source_backend": "chatterbox",
+            "source": "clip",
+            "source_params": {"exaggeration": 0.7},
+            "transpose": 0,
+        },
     }
 
 
 def _engine(src=None):
-    return RvcEngine(src or FakeSource(), FAKE, voices=_voices(), knobs=dict(KNOBS))
+    return RvcEngine({"kokoro": src or FakeSource()}, FAKE, voices=_voices(), knobs=dict(KNOBS))
 
 
 def test_voice_ids_lists_configured_voices():
-    assert set(_engine().voice_ids) == {"charlie", "boom", "die", "echo"}
+    assert set(_engine().voice_ids) == {"charlie", "boom", "die", "echo", "cbvoice"}
 
 
 def test_stream_converts_and_round_trips_source():
@@ -66,6 +72,18 @@ def test_stream_uses_voices_source_preset():
     eng.close()
 
 
+def test_stream_routes_to_per_voice_source_engine():
+    # A chatterbox-backed voice generates its source via the chatterbox engine
+    # with its own params (exaggeration), not Kokoro.
+    kok, cb = FakeSource(), FakeSource()
+    eng = RvcEngine({"kokoro": kok, "chatterbox": cb}, FAKE, voices=_voices(), knobs=dict(KNOBS))
+    list(eng.stream("Hi.", "cbvoice", {"speed": 1.0}))
+    assert not kok.calls  # Kokoro untouched
+    assert cb.calls[0][1] == "clip"
+    assert cb.calls[0][2] == {"exaggeration": 0.7}
+    eng.close()
+
+
 def test_stream_sends_transpose_and_knobs_to_sidecar():
     eng = _engine()
     with pytest.raises(RvcSidecarError) as exc:
@@ -76,6 +94,7 @@ def test_stream_sends_transpose_and_knobs_to_sidecar():
     assert params["index_rate"] == 0.5
     assert params["f0_method"] == "rmvpe"
     assert params["passes"] == 2
+    assert params["gate"] is True
     eng.close()
 
 
@@ -98,7 +117,7 @@ def test_stream_respawns_after_sidecar_death():
 
 def test_warmup_does_not_raise():
     eng = RvcEngine(
-        FakeSource(),
+        {"kokoro": FakeSource()},
         FAKE,
         voices={"charlie": {"source": "af_sarah", "transpose": 0}},
         knobs=dict(KNOBS),
