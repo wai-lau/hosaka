@@ -161,10 +161,11 @@ RVC_VOICES = {
         # gate mutes RVC's gap-hallucinations using the source's silence.
         "source_backend": "chatterbox",
         "source": "charlie_cb",  # a library clone of the reference clip
-        "source_params": {"exaggeration": 0.7, "cfg_weight": 0.3, "temperature": 0.8},
+        "source_params": {"exaggeration": 0.4, "cfg_weight": 0.5, "temperature": 0.3},
         "transpose": 0,  # the clone is already at Charlie's pitch
         "passes": 1,  # single pass -- a 2nd flattens the emotion
         "gate": True,  # mute the output where the source is silent
+        "speed": 1.1,  # tempo time-stretch on the output (Chatterbox has no speed knob)
         "description": "Charlie Morningstar (Hazbin Hotel) -- Chatterbox clone + RVC erika",
     },
 }

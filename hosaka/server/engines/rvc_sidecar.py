@@ -23,6 +23,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import librosa
 import numpy as np
 import soundfile as sf
 from scipy.signal import resample_poly
@@ -113,6 +114,10 @@ def convert(rvc, req, out):
     wav = wav.astype(np.float32)
     if req.get("gate"):
         wav = _silence_gate(src, wav)  # src is the source PCM @ 24k, read above
+    speed = float(req.get("speed", 1.0))
+    if abs(speed - 1.0) > 1e-3:
+        # Tempo change only (keeps pitch) -- Chatterbox has no speed knob.
+        wav = librosa.effects.time_stretch(wav, rate=speed).astype(np.float32)
     f32 = np.ascontiguousarray(wav, dtype="<f4")
     out.write(pack_audio(f32.tobytes()))
     out.flush()

@@ -34,7 +34,7 @@ def _voices():
         "charlie": {"source": "af_sarah", "transpose": 2},
         "boom": {"source": "af_sarah", "transpose": 0},
         "die": {"source": "af_sarah", "transpose": 0},
-        "echo": {"source": "af_sarah", "transpose": 7, "passes": 2, "gate": True},
+        "echo": {"source": "af_sarah", "transpose": 7, "passes": 2, "gate": True, "speed": 1.1},
         "cbvoice": {
             "source_backend": "chatterbox",
             "source": "clip",
@@ -95,6 +95,7 @@ def test_stream_sends_transpose_and_knobs_to_sidecar():
     assert params["f0_method"] == "rmvpe"
     assert params["passes"] == 2
     assert params["gate"] is True
+    assert params["speed"] == 1.1
     eng.close()
 
 

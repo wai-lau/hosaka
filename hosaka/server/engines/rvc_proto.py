@@ -93,6 +93,7 @@ def encode_request(
     rms_mix_rate: float,
     passes: int = 1,
     gate: bool = False,
+    speed: float = 1.0,
 ) -> bytes:
     header = (
         json.dumps(
@@ -105,6 +106,7 @@ def encode_request(
                 "rms_mix_rate": rms_mix_rate,
                 "passes": passes,
                 "gate": gate,
+                "speed": speed,
             }
         ).encode("utf-8")
         + b"\n"
