@@ -6,29 +6,50 @@ both backends -- Kokoro and Chatterbox are plain text-driven, so the only
 engine-agnostic lever is the spelling we hand them. "Wai" -> "Way" makes the
 grapheme-to-phoneme step read the homophone instead of the literal letters.
 
-Matching is whole-word (``\\b`` around the key) and case-insensitive; the
-replacement is emitted verbatim as stored. Whole-word keeps "Waitress" intact
-while rewriting "Wai"; case-insensitive means a sentence-initial "Wai" is caught
-too (the stored replacement's own case wins, which TTS phonemization ignores).
-Multi-word keys are allowed and matched longest-first so a phrase wins over a
-word it contains.
+Matching is whole-word for alphanumeric keys (a ``\\b`` boundary on each
+word-character edge) and case-insensitive; the replacement is emitted verbatim
+as stored. Whole-word keeps "Waitress" intact while rewriting "Wai";
+case-insensitive means a sentence-initial "Wai" is caught too (the stored
+replacement's own case wins, which TTS phonemization ignores). A punctuation key
+like ``~`` has no word boundary to anchor to, so it matches anywhere -- even
+glued to a digit (``~30`` -> ``about30``). Multi-word keys are allowed and
+matched longest-first so a phrase wins over a word it contains.
 """
 
 import json
 import re
 from pathlib import Path
 
+_WORD = re.compile(r"\w")
+
+
+def _anchored(key: str) -> str:
+    """Escape ``key`` and add a ``\\b`` word boundary only on edges that are word
+    characters. A word key ("Wai") gets a boundary on both sides (whole-word); a
+    punctuation key ("~") gets none, so it matches even glued to a digit ("~30");
+    a mixed key gets one only on its word-character side. A bare ``\\b`` around a
+    non-word edge can never match (no word/non-word transition exists there),
+    which is why an all-punctuation key was silently never substituted.
+    """
+    pat = re.escape(key)
+    if _WORD.match(key[0]):
+        pat = r"\b" + pat
+    if _WORD.match(key[-1]):
+        pat = pat + r"\b"
+    return pat
+
 
 def _compile(mapping: dict[str, str]) -> tuple[re.Pattern | None, dict[str, str]]:
     """Build one alternation regex over the keys + a lowercased lookup table.
 
     Keys are sorted longest-first so a multi-word key wins over a shorter key it
-    contains; each is escaped so punctuation in a key is literal.
+    contains; each is escaped (punctuation is literal) and anchored only where a
+    word boundary makes sense (see _anchored). Empty keys are dropped.
     """
-    if not mapping:
+    keys = sorted((k for k in mapping if k), key=len, reverse=True)
+    if not keys:
         return None, {}
-    keys = sorted(mapping, key=len, reverse=True)
-    rx = re.compile(r"\b(?:" + "|".join(re.escape(k) for k in keys) + r")\b", re.IGNORECASE)
+    rx = re.compile("(?:" + "|".join(_anchored(k) for k in keys) + ")", re.IGNORECASE)
     lookup = {k.lower(): v for k, v in mapping.items()}
     return rx, lookup
 

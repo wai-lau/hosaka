@@ -28,6 +28,21 @@ def test_apostrophe_is_a_boundary():
     assert apply_lexicon("Wai's tool", {"Wai": "Way"}) == "Way's tool"
 
 
+def test_symbol_key_matches_without_word_boundary():
+    # A punctuation key like "~" has no word boundary to anchor `\b` to, so it
+    # must match anywhere -- even glued to a digit ("~30") or before a space.
+    m = {"~": "about"}
+    assert apply_lexicon("~30", m) == "about30"
+    assert apply_lexicon("~ 30cm", m) == "about 30cm"
+    assert apply_lexicon("it is ~5 m", m) == "it is about5 m"
+
+
+def test_symbol_key_alongside_word_key_keeps_word_boundary():
+    # Mixing a symbol key and a word key: the word key still stays whole-word.
+    m = {"~": "about", "Wai": "Way"}
+    assert apply_lexicon("Wai ~30 Waitress", m) == "Way about30 Waitress"
+
+
 def test_multiword_key_matches_and_wins_longest_first():
     m = {"York": "Yorke", "New York": "Noo York"}
     assert apply_lexicon("I love New York", m) == "I love Noo York"
