@@ -380,3 +380,58 @@ def test_app_static_page_served(tmp_path):
     assert r.status_code == 200
     assert "hosaka" in r.text.lower()
     assert client.get("/app/pcm-player.js").status_code == 200
+
+
+class RvcFakeEngine(FakeEngine):
+    voice_ids = ["charlie", "charlie2"]
+
+
+def _client_with_rvc(tmp_path):
+    reg = EngineRegistry(kokoro=FakeEngine(), chatterbox=FakeEngine(), rvc=RvcFakeEngine())
+    lib = VoiceLibrary(tmp_path / "voices")
+    return TestClient(create_app(reg, lib, do_warmup=False)), lib
+
+
+def test_voices_list_rvc_when_available(tmp_path):
+    from hosaka.config import RVC_VOICES
+
+    client, _ = _client_with_rvc(tmp_path)
+    voices = {v["id"]: v for v in client.get("/v1/voices").json()}
+    assert voices["charlie"]["backend"] == "rvc"
+    assert voices["charlie2"]["backend"] == "rvc"
+    assert voices["charlie"]["description"] == RVC_VOICES["charlie"]["description"]
+
+
+def test_voices_omit_rvc_when_unavailable(tmp_path):
+    client, _ = _client(tmp_path)
+    backends = {v["backend"] for v in client.get("/v1/voices").json()}
+    assert "rvc" not in backends
+
+
+def test_speech_rvc_voice_streams(tmp_path):
+    client, _ = _client_with_rvc(tmp_path)
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "hi", "backend": "rvc", "voice": "charlie"},
+    )
+    assert r.status_code == 200
+    assert len(r.content) > 0 and len(r.content) % 4 == 0
+
+
+def test_speech_unknown_rvc_voice_is_400(tmp_path):
+    client, _ = _client_with_rvc(tmp_path)
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "hi", "backend": "rvc", "voice": "bogus"},
+    )
+    assert r.status_code == 400
+    assert "bogus" in r.json()["detail"]
+
+
+def test_speech_rvc_unavailable_is_400(tmp_path):
+    client, _ = _client(tmp_path)
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "hi", "backend": "rvc", "voice": "charlie"},
+    )
+    assert r.status_code == 400

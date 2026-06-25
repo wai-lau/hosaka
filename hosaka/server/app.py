@@ -19,6 +19,7 @@ from hosaka.config import (
     LLM_MODEL,
     MAX_QUEUE,
     PIPER_VOICES,
+    RVC_VOICES,
 )
 from hosaka.lexicon import Lexicon
 from hosaka.library import VoiceLibrary
@@ -90,6 +91,9 @@ def _resolve(registry: EngineRegistry, library: VoiceLibrary, backend: str, voic
     elif backend == "piper":
         if voice not in engine.voice_ids:
             return None, f"unknown piper voice: {voice}"
+    elif backend == "rvc":
+        if voice not in engine.voice_ids:
+            return None, f"unknown rvc voice: {voice}"
     elif voice and library.path_for(voice) is None:
         # chatterbox: "" is the model's own default voice; anything else must
         # resolve to a reference clip in the library.
@@ -248,6 +252,16 @@ def create_app(
                     description=PIPER_VOICES.get(vid, {}).get("description", ""),
                 ).model_dump()
                 for vid in registry.piper.voice_ids
+            ]
+        if registry.rvc is not None:
+            out += [
+                VoiceInfo(
+                    id=vid,
+                    backend="rvc",
+                    source="rvc",
+                    description=RVC_VOICES.get(vid, {}).get("description", ""),
+                ).model_dump()
+                for vid in registry.rvc.voice_ids
             ]
         return out
 
