@@ -16,6 +16,7 @@ class EngineRegistry:
     kokoro: Engine
     chatterbox: Engine
     piper: Engine | None = None  # optional CPU sidecar (character voices)
+    rvc: Engine | None = None  # optional GPU sidecar (converted character voices)
 
     def get(self, backend: str) -> Engine:
         if backend == "kokoro":
@@ -26,6 +27,10 @@ class EngineRegistry:
             if self.piper is None:
                 raise KeyError("piper backend not available")
             return self.piper
+        if backend == "rvc":
+            if self.rvc is None:
+                raise KeyError("rvc backend not available")
+            return self.rvc
         raise KeyError(f"unknown backend: {backend}")
 
     def warmup_all(self) -> None:
@@ -33,3 +38,5 @@ class EngineRegistry:
         self.chatterbox.warmup()
         if self.piper is not None:
             self.piper.warmup()
+        if self.rvc is not None:
+            self.rvc.warmup()
