@@ -1,4 +1,5 @@
 import readline  # noqa: F401 -- importing it gives input() line editing + history
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,7 @@ from hosaka.config import (
     DEFAULT_VOICE,
     LEXICON_PATH,
     SERVER_PORT,
+    SERVER_UNIT,
     SERVER_URL,
     VOICE_DIR,
     native_to_pct,
@@ -33,7 +35,76 @@ def _server_up() -> bool:
         return False
 
 
+# systemd ActiveState values that mean the managed unit owns the port right now
+# (running, or in the middle of (re)starting). In any of these the REPL must
+# wait for the unit, never spawn its own server on the same port.
+_UNIT_PROVIDING = ("active", "activating", "reloading", "deactivating")
+
+
+def _startup_action(server_up, load_state, active_state):
+    """Decide how the REPL should obtain a server. Pure policy, no I/O.
+
+    Returns one of:
+      "attach"     -- a healthy server already answers; just use it.
+      "wait"       -- the systemd unit owns the port and is up / coming up;
+                      wait for it instead of spawning a competing process.
+      "start_unit" -- the unit is installed but stopped/failed; ask systemd to
+                      start it (still never spawn our own on its port).
+      "spawn"      -- no managed unit (systemctl or the unit is absent); the
+                      REPL runs its own server as a fallback.
+
+    Spawning while the unit is merely down races systemd for port 8123: a spawn
+    that outlives the health wait orphans and squats the port, sending the unit
+    into an unbindable restart loop. So we only ever spawn when no unit exists.
+    """
+    if server_up:
+        return "attach"
+    if load_state != "loaded":
+        return "spawn"
+    if active_state in _UNIT_PROVIDING:
+        return "wait"
+    return "start_unit"
+
+
+def _unit_info():
+    """(LoadState, ActiveState) of the managed unit, or (None, None) when
+    systemd or the unit is unavailable (then the REPL owns the server)."""
+    if shutil.which("systemctl") is None:
+        return None, None
+    try:
+        r = subprocess.run(
+            ["systemctl", "--user", "show", SERVER_UNIT, "-p", "LoadState", "-p", "ActiveState"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+    fields = {}
+    for line in r.stdout.splitlines():
+        key, _, val = line.partition("=")
+        fields[key.strip()] = val.strip()
+    return fields.get("LoadState") or None, fields.get("ActiveState") or None
+
+
+def _wait_healthy(timeout_s: float = 90.0) -> bool:
+    """Poll /health until it answers or the timeout elapses."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if _server_up():
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _start_unit() -> None:
+    """Clear any failed state and (re)start the managed systemd unit."""
+    for args in (["reset-failed", SERVER_UNIT], ["start", SERVER_UNIT]):
+        subprocess.run(["systemctl", "--user", *args], capture_output=True, text=True, timeout=10)
+
+
 def _spawn_server() -> None:
+    """Fallback: run our own uvicorn when no systemd unit manages the server."""
     log_path = Path(tempfile.gettempdir()) / "hosaka-server.log"
     log = open(log_path, "w")  # capture startup errors instead of discarding
     subprocess.Popen(
@@ -50,11 +121,29 @@ def _spawn_server() -> None:
         stdout=log,
         stderr=log,
     )
-    for _ in range(120):  # wait up to ~60s for model load + warmup
-        if _server_up():
-            return
-        time.sleep(0.5)
-    raise RuntimeError(f"server did not become healthy; see {log_path} for the cause")
+    if not _wait_healthy():
+        raise RuntimeError(f"server did not become healthy; see {log_path} for the cause")
+
+
+def _ensure_server() -> None:
+    """Make a healthy server reachable, deferring to systemd when it owns the
+    port and only spawning our own as a last resort. See _startup_action."""
+    if _server_up():
+        return
+    action = _startup_action(False, *_unit_info())
+    if action == "spawn":
+        print("starting hosaka server (loading models)...")
+        _spawn_server()
+        return
+    if action == "start_unit":
+        print("hosaka server unit is down; starting via systemd...")
+        _start_unit()
+    else:  # "wait"
+        print("hosaka server is starting (systemd); waiting...")
+    if not _wait_healthy():
+        raise RuntimeError(
+            f"hosaka server did not become healthy; check: journalctl --user -u {SERVER_UNIT} -n 50"
+        )
 
 
 def _voice_backend(name, fallback):
@@ -108,9 +197,7 @@ def _input_lines(prompt):
 
 
 def main():
-    if not _server_up():
-        print("starting hosaka server (loading models)...")
-        _spawn_server()
+    _ensure_server()
 
     lib = VoiceLibrary(VOICE_DIR)
     backend = DEFAULT_BACKEND
@@ -194,7 +281,7 @@ def main():
                     )
                 elif a.kind == "help":
                     print(
-                        ":voice <name> | :clone <id|path> | :backend k|c | "
+                        ":voice <name> | :clone <id|path> | :backend k|c|p | "
                         ":exag/:cfg/:temp/:speed/:vol <0-100> | :voices | "
                         ":pron [list|add <word> <respelling>|rm <word>] | :status | "
                         ":quit[ --stop]"

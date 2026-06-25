@@ -6,25 +6,30 @@ the full design and `README.md` for install + usage.
 ## What this is
 
 A local near-real-time TTS tool: a FastAPI server holding two models resident in
-VRAM (Kokoro for realtime presets, Chatterbox for cloning), a REPL client that
-streams PCM to `pacat`, and an isolated offline Parler "bake" CLI that designs
-voices from text. Single user, English only, runs on a Blackwell RTX 5070 Ti
-under WSL2.
+VRAM (Kokoro for realtime presets, Chatterbox for cloning) plus a CPU Piper
+sidecar for fixed character voices (GLaDOS), a REPL client that streams PCM to
+`pacat`, and an isolated offline Parler "bake" CLI that designs voices from text.
+Single user, English only, runs on a Blackwell RTX 5070 Ti under WSL2.
 
-## Environments — there are THREE venvs, use the right one
+## Environments — there are FOUR venvs, use the right one
 
 | Venv | Holds | Use for |
 |------|-------|---------|
 | `.venv-dev` | pytest, pydantic, numpy, fastapi, httpx (NO torch) | the fast non-GPU test suite |
 | `.venv-server` | torch cu128 + Kokoro + Chatterbox + server deps | running the server, GPU tests |
 | `.venv-bake` | torch cu128 + Parler (pinned old transformers) | the bake CLI only |
+| `.venv-piper` | piper-tts + onnxruntime + scipy (CPU, NO torch) | the Piper character-voice sidecar only |
 
 Run the non-GPU suite: `.venv-dev/bin/python -m pytest -m "not gpu"`
 Run GPU tests:        `PYTHONPATH=$PWD .venv-server/bin/python -m pytest -m gpu`
 
 GPU-touching code can only be imported in `.venv-server` (engines import
 torch/kokoro/chatterbox). Pure-logic modules (chunking, library, schemas,
-replcmd, audio, server/app with a FakeEngine) run in `.venv-dev`.
+replcmd, audio, server/app with a FakeEngine) run in `.venv-dev`. The Piper
+sidecar (`piper_sidecar.py`) imports piper/onnxruntime and runs ONLY in
+`.venv-piper` — never import it from the server. Its client (`piper_engine.py`,
+numpy + subprocess only) and the wire protocol (`piper_proto.py`) are pure and
+tested in `.venv-dev` by driving a fake sidecar over a real pipe.
 
 ## Hard rules (these were learned the hard way — do not break them)
 
@@ -37,6 +42,12 @@ replcmd, audio, server/app with a FakeEngine) run in `.venv-dev`.
   hook (attention weights come back `None`). Do not bump it in `.venv-server`.
 - **Parler needs `protobuf>=4`** (sentencepiece wants the `builder` module);
   keep it isolated in `.venv-bake` — never let its deps near the server.
+- **Piper runs CPU-only in `.venv-piper`, isolated by choice.** Its deps
+  (onnxruntime + numpy) happen to match the server today, but the server venv
+  must never import piper: it spawns `piper_sidecar.py` under `.venv-piper` and
+  talks over the `piper_proto` pipe. Character voices are pretrained `.onnx`
+  downloads (NO training here) — add one with a `PIPER_VOICES` entry +
+  `scripts/fetch_glados_model.sh`. Setup: `scripts/setup_piper_venv.sh`.
 - **Audio:** install only `pulseaudio-utils` (client). NEVER `apt install
   pulseaudio` (the daemon) — it breaks WSLg audio. Never install Linux GPU
   drivers or `cuda`/`cuda-drivers` meta-packages inside WSL. WSLg's RDP bridge
@@ -67,10 +78,18 @@ replcmd, audio, server/app with a FakeEngine) run in `.venv-dev`.
   reintroduce an untracked `run_in_executor` future.
 - Personal voice data lives in `~/.local/share/hosaka/voices` (untracked).
   Only the couple of sample seeds under `hosaka/sample_voices/` are committed.
+- Piper character voices are pretrained `.onnx` models under
+  `~/.local/share/hosaka/piper/<voice>/` (untracked); the sidecar resamples them
+  22.05k->24k. Missing model/venv degrades gracefully (engine simply not built).
+  Piper is CPU but for now still routes through the GPU admission queue.
 - The server runs persistently as the systemd user unit `hosaka-server.service`
   (execs `scripts/start_server.sh`), linger-enabled so it starts on WSL boot.
-  Bound to `127.0.0.1:8123`; the REPL also auto-spawns it if down. For remote
-  use it is reverse-proxied by the exec-fn app — see ARCHITECTURE.md.
+  Bound to `127.0.0.1:8123`. The REPL defers to this unit when installed —
+  waiting for it, or `systemctl --user start`ing it if down — rather than
+  spawning a competing process on the port; it spawns its own server only as a
+  fallback when no unit exists (see `_startup_action` in `repl.py`). A spawn
+  that races the unit for the port orphans and squats it, breaking the unit.
+  For remote use it is reverse-proxied by the exec-fn app — see ARCHITECTURE.md.
 
 ## Linting
 
@@ -81,6 +100,7 @@ and `.venv-dev/bin/ruff format`. Keep the suite green
 
 ## Verify a change end-to-end
 
-`bash scripts/smoke_server.sh` starts the real server, hits both backends, plays
-through `pacat`, and shuts down. `scripts/benchmark_latency.py` gates the Kokoro
-realtime path (<1s first chunk) and reports Chatterbox quality-mode timing.
+`bash scripts/smoke_server.sh` starts the real server, hits all three backends
+(Kokoro, Chatterbox, Piper/GLaDOS), plays through `pacat`, and shuts down.
+`scripts/benchmark_latency.py` gates the Kokoro realtime path (<1s first chunk)
+and reports Chatterbox quality-mode timing.

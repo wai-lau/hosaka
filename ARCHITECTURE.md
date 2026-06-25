@@ -6,51 +6,74 @@ clone voices; design new voices from a text description.
 
 ## Shape
 
+Read left to right: voice data is authored, an engine renders PCM, the
+server fans it to clients, clients play it. Solid arrows are that forward
+audio flow; dotted arrows are the speech requests that travel back upstream.
+
 ```mermaid
 flowchart LR
-    repl["REPL client<br/>(hosaka.cli.repl)"]
-    web["web client<br/>(hosaka/web, /app/)"]
-    proxy["exec-fn proxy<br/>(wai-lau.net/hosaka,<br/>SSH tunnel + cookie auth)"]
-    server["FastAPI server<br/>(hosaka.server, 127.0.0.1:8123)"]
-    kokoro["KokoroEngine<br/>(presets, realtime)"]
-    chatter["ChatterboxEngine<br/>(cloning, quality)"]
-    win(["Windows speakers"])
-    linux(["native-Linux speakers"])
     bake["bake CLI<br/>(hosaka.cli.bake, isolated venv)"]
     library[("voice library<br/>~/.local/share/hosaka/voices")]
+    pmodels[("piper models<br/>~/.local/share/hosaka/piper")]
+    kokoro["KokoroEngine<br/>(presets, realtime)"]
+    chatter["ChatterboxEngine<br/>(cloning, quality)"]
+    piper["PiperEngine<br/>(character voices)"]
+    sidecar["piper_sidecar<br/>(.venv-piper, CPU)"]
+    server["FastAPI server<br/>(hosaka.server, 127.0.0.1:8123)"]
+    repl["REPL client<br/>(hosaka.cli.repl)"]
+    proxy["exec-fn proxy<br/>(wai-lau.net/hosaka,<br/>SSH tunnel + cookie auth)"]
+    web["web client<br/>(hosaka/web, /app/)"]
+    win(["Windows speakers"])
+    linux(["native-Linux speakers"])
+    browser(["browser audio<br/>(AudioWorklet)"])
 
-    repl <-->|"HTTP POST /v1/audio/speech<br/>(raw PCM, 24kHz mono, float32 LE)"| server
-    web <-->|"WS /v1/audio/stream"| proxy
-    proxy <-->|"WS over SSH tunnel"| server
-    repl -->|"ffplay.exe (WSLg path)"| win
-    repl -.->|"pacat (native-Linux path)"| linux
-    server --> kokoro
-    server --> chatter
+    %% forward: audio production pipeline, all left-to-right
     bake -->|"Parler → seed.wav"| library
     library -->|"reference WAV"| chatter
+    kokoro -->|"PCM"| server
+    chatter -->|"PCM"| server
+    pmodels -->|"onnx voice"| sidecar
+    sidecar -->|"framed PCM (pipe)"| piper
+    piper -->|"PCM"| server
+    server -->|"HTTP /v1/audio/speech<br/>raw PCM 24kHz mono f32 LE"| repl
+    server -->|"WS over SSH tunnel"| proxy
+    proxy -->|"WS /v1/audio/stream"| web
+    repl -->|"ffplay.exe (WSLg)"| win
+    repl -.->|"pacat (native-Linux path)"| linux
+    web -->|"AudioWorklet PCM"| browser
+
+    %% backward: speech requests (control)
+    repl -.->|"speech request"| server
+    web -.->|"speech request"| proxy
 ```
 
 Three deployable units, each with one clear responsibility:
 
-1. **Server** (`hosaka/server/`) — holds both models resident in VRAM, exposes
-   an OpenAI-shaped HTTP API, streams raw PCM.
-2. **REPL client** (`hosaka/cli/repl.py`) — auto-spawns the server, reads lines,
-   pipes streamed PCM into `pacat`.
+1. **Server** (`hosaka/server/`) — holds the two GPU models resident in VRAM,
+   exposes an OpenAI-shaped HTTP API, streams raw PCM. It also spawns and talks
+   to a CPU-only **Piper sidecar** (`.venv-piper`) for neural character voices;
+   the server venv itself never imports piper.
+2. **REPL client** (`hosaka/cli/repl.py`) — connects to the server (deferring to
+   the systemd unit, spawning its own only as a fallback), reads lines, pipes
+   streamed PCM into `pacat`.
 3. **Bake CLI** (`hosaka/cli/bake.py`) — offline, isolated venv; turns a text
    voice description into a clone-able seed WAV.
 
-## Two engines, one decision
+## Three engines, one decision
 
-No single open model does presets + cloning + tuning + style-prompt AND hits
-<1s on this card. So the work is split:
+No single open model does presets + cloning + tuning + style-prompt + character
+voices AND hits <1s on this card. So the work is split:
 
 | Engine | Role | Why | Latency on this box |
 |--------|------|-----|---------------------|
 | **Kokoro-82M** | presets + the realtime path | tiny, fast, ~28 English voices | ~60ms to first audio |
 | **Chatterbox** (original, `davidbrowne17/chatterbox-streaming`) | cloning + tuning | best open zero-shot clone, keeps `exaggeration`/`cfg_weight`/`temperature` | RTF ~0.8; ~4s to first audio (see below) |
+| **Piper** (VITS, CPU) | fixed character voices (GLaDOS) | pretrained single-speaker `.onnx` voices, non-autoregressive — runs off-GPU and beats realtime | RTF 0.04-0.2; ~40-80ms to first audio |
 | **Parler-TTS Mini** (offline) | style-prompt voice authoring | only model that designs a voice from words | irrelevant (offline) |
 
-Both Kokoro and Chatterbox stay pinned in VRAM (~5-6 GB of 16).
+Kokoro and Chatterbox stay pinned in VRAM (~5-6 GB of 16); Piper runs CPU-only
+(models in RAM) in an isolated sidecar, so it never competes for VRAM and could
+run concurrently with the GPU engines.
 
 ### The bake-once idea
 
@@ -81,6 +104,28 @@ Fast realtime cloning is a deferred follow-up: **Chatterbox-Turbo** (now on HF,
 distilled 1-step vocoder, 350M, ~RTF 0.5) or XTTS-v2 — a model swap with quality
 re-validation, not a kernel tweak (bf16 does not help here: T3 is overhead-bound,
 not flop-bound, and a full bf16 cast crashes the s3tokenizer FFT).
+
+### Character voices (Piper)
+
+GLaDOS and other fixed characters are not clones — they are pretrained
+single-speaker Piper/VITS `.onnx` voices (e.g. `DavesArmoury/GLaDOS_TTS`,
+fine-tuned on Portal 1/2 lines). Piper is non-autoregressive (one parallel
+forward pass), CPU-only and
+small, so it reaches first audio in ~40-80ms warm and runs ~5-25x realtime —
+faster than either GPU engine, and entirely off the GPU.
+
+Because piper's deps (onnxruntime, its own numpy) must stay out of the server
+venv, the model runs in an out-of-process **sidecar** under `.venv-piper`
+(`hosaka/server/engines/piper_sidecar.py`). The in-process `PiperEngine` is a
+thin client: it spawns the sidecar once (model stays resident → warm latency),
+writes one JSON request per fragment over the pipe, and reads back tagged,
+length-prefixed float32 frames (`piper_proto.py`); the sidecar resamples each
+sentence 22.05k→24k. One sidecar serves multiple voices (the request carries the
+voice id), so adding a character = drop a model + one `PIPER_VOICES` entry in
+`config.py`. If `.venv-piper` or the model files are absent the engine is simply
+not built and the server runs Kokoro + Chatterbox as before. Piper is CPU-bound
+but for now still routes through the same GPU admission queue as the other
+backends (serialized); letting it bypass the queue is a possible follow-up.
 
 ## Request path
 
@@ -120,8 +165,9 @@ AudioWorklet PCM player driven by the WebSocket endpoint. It is a reference /
 local-test client; a real front end (e.g. on a public host) can lift the same
 two files.
 
-Other endpoints: `GET /health` (ready when both models are warmed),
-`GET /v1/voices` (presets + library clips), `POST /shutdown` (clean `:quit --stop`).
+Other endpoints: `GET /health` (ready when the models are warmed),
+`GET /v1/voices` (presets + library clips + Piper character voices),
+`POST /shutdown` (clean `:quit --stop`).
 
 ## Data + audio
 
@@ -131,6 +177,10 @@ Other endpoints: `GET /health` (ready when both models are warmed),
   `manifest.json` mapping voice-id → {path, source, params, created}. Lives in
   `~/.local/share/hosaka/voices` — outside the repo, so personal recordings never
   enter git. The repo ships a couple of Kokoro-rendered sample seeds.
+- **Piper models** (`~/.local/share/hosaka/piper/<voice>/`): pretrained `.onnx`
+  + `.onnx.json` character voices, untracked (weights are large; the Portal
+  training audio is Valve copyright). Fetched by `scripts/fetch_glados_model.sh`;
+  registered in `config.PIPER_VOICES`.
 - **Pronunciation lexicon** (`hosaka/lexicon.py`): a flat `{word: respelling}`
   JSON at `~/.local/share/hosaka/lexicon.json` (untracked, alongside the voice
   library). Applied to `input` before chunking on every path (HTTP, WS, REPL,
@@ -149,16 +199,21 @@ Other endpoints: `GET /health` (ready when both models are warmed),
 ## VRAM lifecycle
 
 On server start the lifespan hook best-effort `ollama stop gpt-oss:20b` to free
-VRAM, then loads and warms both models (a tiny synth each) so the first real
-request is not a cold start. Models stay pinned for the session.
+VRAM, then loads and warms the GPU models (a tiny synth each) so the first real
+request is not a cold start. Models stay pinned for the session. Warmup also
+spawns the Piper sidecar and warms each character voice (loaded into RAM, not
+VRAM), so its first request is warm too.
 
 ## Running it / startup
 
 `scripts/start_server.sh` is the canonical launcher (uvicorn on
 `127.0.0.1:8123`). It runs on WSL startup via the systemd *user* unit
 `hosaka-server.service` (tracked under `scripts/systemd/`); `loginctl
-enable-linger` makes it come up at boot without an interactive login. The REPL
-also auto-spawns the server if it is not already up.
+enable-linger` makes it come up at boot without an interactive login. If the
+server is down, the REPL defers to systemd when the unit is installed — waiting
+for it, or starting it via `systemctl --user start` — and spawns its own
+process only as a fallback when no unit exists, so it never competes with the
+unit for the port. The decision is the pure `_startup_action` in `repl.py`.
 
 ## Remote / web access
 
@@ -168,14 +223,19 @@ this box over an SSH tunnel and gates it behind that app's session-cookie auth �
 no ports are opened on the home box. The bundled `/app/` client is for local
 testing.
 
-## Why two venvs
+## Why three venvs
 
-`hosaka/server/` (`.venv-server`) and the bake CLI (`.venv-bake`) are separate
-Python environments. Parler hard-pins an old `transformers`, and Chatterbox needs
-`transformers==4.46.3`; keeping Parler isolated means its dependency constraints
-can never poison the live server. The bake CLI writes a WAV to disk; the server
-never imports Parler. See `scripts/setup_server_venv.sh` and
-`scripts/setup_bake_venv.sh` for the exact, Blackwell-verified recipes.
+`.venv-server`, the bake CLI (`.venv-bake`) and the Piper sidecar (`.venv-piper`)
+are separate Python environments. Parler hard-pins an old `transformers`, and
+Chatterbox needs `transformers==4.46.3`; keeping Parler isolated means its
+dependency constraints can never poison the live server. Piper pulls
+`onnxruntime` + its own numpy; even though those happen to be compatible today,
+isolating them keeps the delicate torch/Kokoro/Chatterbox stack untouchable, and
+lets piper stay a CPU-only process. Both side environments communicate with the
+server only out-of-process — bake writes a WAV to disk, the Piper sidecar streams
+PCM over a pipe — and the server venv imports neither Parler nor piper. See
+`scripts/setup_server_venv.sh`, `scripts/setup_bake_venv.sh` and
+`scripts/setup_piper_venv.sh` for the exact recipes.
 
 ## Module map
 
@@ -192,6 +252,9 @@ never imports Parler. See `scripts/setup_server_venv.sh` and
 | `hosaka/server/engines/base.py` | `Engine` protocol + `EngineRegistry` |
 | `hosaka/server/engines/kokoro_engine.py` | Kokoro presets engine |
 | `hosaka/server/engines/chatterbox_engine.py` | Chatterbox cloning (quality mode) |
+| `hosaka/server/engines/piper_engine.py` | Piper sidecar client (character voices) |
+| `hosaka/server/engines/piper_sidecar.py` | Piper synth worker (runs in `.venv-piper`) |
+| `hosaka/server/engines/piper_proto.py` | pipe wire protocol shared by both |
 | `hosaka/cli/replcmd.py` | REPL colon-command parser |
 | `hosaka/cli/repl.py` | REPL client (auto-spawn, stream, play) |
 | `hosaka/cli/bake.py` | offline Parler voice-bake CLI |

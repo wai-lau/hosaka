@@ -4,6 +4,9 @@ SAMPLE_RATE = 24000  # Hz, mono, float32 LE everywhere
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8123
 SERVER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
+# systemd --user unit that owns the server (and port) when installed. The REPL
+# defers to it instead of spawning a competing process on the same port.
+SERVER_UNIT = "hosaka-server.service"
 
 DEFAULT_BACKEND = "kokoro"
 DEFAULT_VOICE = "af_heart"
@@ -86,6 +89,22 @@ MANIFEST_PATH = VOICE_DIR / "manifest.json"
 # Custom-pronunciation map ({word: respelling}); applied to input before
 # chunking on every path into the engines. See hosaka/lexicon.py.
 LEXICON_PATH = DATA_DIR / "lexicon.json"
+
+# Piper neural character voices (e.g. GLaDOS). Run CPU-only in an isolated venv
+# (.venv-piper) as an out-of-process sidecar; the server venv never imports
+# piper. Model weights live untracked under the data dir -- fetch them with
+# scripts/fetch_glados_model.sh. Adding a character = drop a model + one entry
+# here (id -> onnx path + blurb), no code change.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+PIPER_PYTHON = _REPO_ROOT / ".venv-piper" / "bin" / "python"
+PIPER_SIDECAR = _REPO_ROOT / "hosaka" / "server" / "engines" / "piper_sidecar.py"
+PIPER_DIR = DATA_DIR / "piper"
+PIPER_VOICES = {
+    "glados": {
+        "model": PIPER_DIR / "glados" / "glados_piper_medium.onnx",
+        "description": "GLaDOS (Portal), DavesArmoury",
+    },
+}
 
 # Default sentence the bake CLI speaks to produce a clone seed clip.
 BAKE_SEED_TEXT = (
