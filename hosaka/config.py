@@ -110,6 +110,64 @@ PIPER_VOICES = {
     },
 }
 
+# RVC character voices (e.g. Charlie Morningstar). Run GPU in an isolated venv
+# (.venv-rvc) as an out-of-process sidecar; the server venv never imports
+# rvc-python. RVC converts timbre, so each voice declares the character's
+# gender + accent -- the neutral Kokoro SOURCE preset must match (see
+# resolve_source). Model weights live untracked under the data dir -- fetch
+# them with scripts/fetch_rvc_model.sh. Adding a character = drop a model + one
+# RVC_VOICES entry, no code change.
+RVC_PYTHON = _REPO_ROOT / ".venv-rvc" / "bin" / "python"
+RVC_SIDECAR = _REPO_ROOT / "hosaka" / "server" / "engines" / "rvc_sidecar.py"
+RVC_DIR = DATA_DIR / "rvc"
+RVC_HUBERT = RVC_DIR / "hubert_base.pt"  # ContentVec/HuBERT feature encoder
+RVC_RMVPE = RVC_DIR / "rmvpe.pt"  # F0 (pitch) estimator
+
+# (gender, accent) -> neutral Kokoro base preset. Kokoro English is American or
+# British only; a tuple absent here has no matching base (hard stop, not a
+# "download more presets" case).
+SOURCE_PRESETS = {
+    ("female", "american"): "af_sarah",  # clear + neutral
+    ("male", "american"): "am_michael",
+    ("female", "british"): "bf_emma",
+    ("male", "british"): "bm_george",
+}
+
+# Fixed conversion knobs for MVP (no per-request RVC knobs).
+RVC_KNOBS = {
+    "index_rate": 0.5,
+    "f0_method": "rmvpe",
+    "protect": 0.33,
+    "rms_mix_rate": 0.25,
+}
+
+RVC_VOICES = {
+    "charlie": {
+        "model": RVC_DIR / "charlie" / "charlie.pth",
+        "index": RVC_DIR / "charlie" / "charlie.index",
+        "model_sr": 32000,  # native; the sidecar resamples 32k -> 24k
+        "gender": "female",
+        "accent": "american",
+        "source": "af_sarah",  # must equal SOURCE_PRESETS[(female, american)]
+        "transpose": 0,  # semitones; tune by ear (demo showed -16..+16)
+        "description": "Charlie Morningstar (Hazbin Hotel), RVC V2",
+    },
+}
+
+
+def resolve_source(voice_cfg: dict) -> str:
+    """The neutral Kokoro source preset for an RVC voice, validated against its
+    gender + accent. A configured `source` that disagrees with the tuple is a
+    config error (fail loud). KeyError if Kokoro has no base for the tuple."""
+    want = SOURCE_PRESETS[(voice_cfg["gender"], voice_cfg["accent"])]
+    if voice_cfg["source"] != want:
+        raise ValueError(
+            f"RVC source {voice_cfg['source']!r} != {want!r} for "
+            f"{voice_cfg['gender']}/{voice_cfg['accent']}"
+        )
+    return want
+
+
 # Default sentence the bake CLI speaks to produce a clone seed clip.
 BAKE_SEED_TEXT = (
     "The quick brown fox jumps over the lazy dog. "
