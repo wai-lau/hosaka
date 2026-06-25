@@ -3,8 +3,8 @@ from hosaka.schemas import SpeechParams, SpeechRequest, clamp_params
 
 def test_request_defaults():
     r = SpeechRequest(input="hi")
-    assert r.backend == "kokoro"
-    assert r.voice == "af_heart"
+    assert r.backend == "piper"
+    assert r.voice == "glados"
     assert r.params.exaggeration == 0.5
     assert r.stream is True
 

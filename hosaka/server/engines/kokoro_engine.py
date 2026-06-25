@@ -1,7 +1,7 @@
 import numpy as np
 from kokoro import KPipeline
 
-from hosaka.config import DEFAULT_VOICE
+from hosaka.config import KOKORO_WARMUP_VOICE
 
 
 class KokoroEngine:
@@ -11,7 +11,7 @@ class KokoroEngine:
         self._pipe = KPipeline(lang_code=lang_code)
 
     def warmup(self) -> None:
-        for _ in self.stream("warm up.", DEFAULT_VOICE, {"speed": 1.0}):
+        for _ in self.stream("warm up.", KOKORO_WARMUP_VOICE, {"speed": 1.0}):
             pass
 
     def stream(self, text, voice, params):

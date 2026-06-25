@@ -10,8 +10,8 @@ class SpeechParams(BaseModel):
 
 class SpeechRequest(BaseModel):
     input: str
-    backend: str = "kokoro"
-    voice: str = "af_heart"
+    backend: str = "piper"
+    voice: str = "glados"
     params: SpeechParams = SpeechParams()
     response_format: str = "pcm"
     stream: bool = True

@@ -8,8 +8,12 @@ SERVER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 # defers to it instead of spawning a competing process on the same port.
 SERVER_UNIT = "hosaka-server.service"
 
-DEFAULT_BACKEND = "kokoro"
-DEFAULT_VOICE = "af_heart"
+DEFAULT_BACKEND = "piper"
+DEFAULT_VOICE = "glados"
+
+# Voice Kokoro warms up on -- a real Kokoro preset, independent of the REPL's
+# DEFAULT_VOICE (which may point at another backend, e.g. piper/glados).
+KOKORO_WARMUP_VOICE = "af_heart"
 
 # Max requests admitted at once (the one running on the GPU + those waiting in
 # line). The GPU still serves strictly one at a time; this only bounds how deep
