@@ -76,6 +76,19 @@ add another by dropping a model under `~/.local/share/hosaka/piper/<voice>/` and
 adding a `PIPER_VOICES` entry in `hosaka/config.py`. Skip this venv and the server
 still runs Kokoro + Chatterbox fine.
 
+### RVC venv (voice-converted character voices, GPU) — optional
+
+```
+cd ~/src/hosaka
+bash scripts/setup_rvc_venv.sh    # python3.10 via uv + rvc-python + fairseq-git
+bash scripts/fetch_rvc_model.sh   # downloads Charlie model + hubert/rmvpe assets
+```
+
+RVC runs in its own venv (Python 3.10, isolated from the server) and is spawned
+as a GPU sidecar. Adding a character = drop a model + index + one `RVC_VOICES`
+entry in `hosaka/config.py`. Skip this venv and the server still runs the other
+engines fine.
+
 ## Use
 
 ```
@@ -93,14 +106,23 @@ Commands:
 - `:voice <name> [text]` — switch voice (backend auto-resolved from the registry);
   any trailing text is spoken immediately in that voice.
 - `:clone <id|path>` — clone a library voice id, or add+use an arbitrary WAV.
-- `:backend kokoro|chatterbox|piper` — force the backend (usually unneeded;
-  `:voice glados` auto-switches to Piper).
+- `:backend kokoro|chatterbox|piper|rvc` — force the backend (usually unneeded;
+  `:voice glados` auto-switches to Piper, `:voice charlie` to RVC).
 - `:exag` / `:cfg` / `:temp` / `:speed <number>` — tune (Piper honors `:speed`).
 - `:pron add <word> <respelling>` — fix a mispronounced word by respelling it to
   a homophone (`:pron add Wai Way`); applies on both backends. `:pron list` /
   `:pron rm <word>`. Stored in `~/.local/share/hosaka/lexicon.json`.
-- `:voices` — list presets + library clips + character voices (e.g. `glados`).
-  `:help`. `:quit` (or `:quit --stop`).
+- `:voices` — list presets + library clips + character voices (e.g. `glados`,
+  `charlie`). `:help`. `:quit` (or `:quit --stop`).
+
+For an RVC voice-converted character (e.g. Charlie Morningstar via the RVC
+backend):
+
+```
+:voice charlie Hello, it's a lovely day.
+```
+
+Or explicitly: `:backend rvc` then `:voice charlie`.
 
 Bake a described voice (runs offline, in the bake venv):
 

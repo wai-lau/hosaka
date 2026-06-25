@@ -15,10 +15,13 @@ flowchart LR
     bake["bake CLI<br/>(hosaka.cli.bake, isolated venv)"]
     library[("voice library<br/>~/.local/share/hosaka/voices")]
     pmodels[("piper models<br/>~/.local/share/hosaka/piper")]
+    rmodels[("rvc models<br/>~/.local/share/hosaka/rvc")]
     kokoro["KokoroEngine<br/>(presets, realtime)"]
     chatter["ChatterboxEngine<br/>(cloning, quality)"]
     piper["PiperEngine<br/>(character voices)"]
+    rvc["RvcEngine<br/>(converted character voices)"]
     sidecar["piper_sidecar<br/>(.venv-piper, CPU)"]
+    rvc_sidecar["rvc_sidecar<br/>(.venv-rvc, GPU)"]
     server["FastAPI server<br/>(hosaka.server, 127.0.0.1:8123)"]
     repl["REPL client<br/>(hosaka.cli.repl)"]
     proxy["exec-fn proxy<br/>(wai-lau.net/hosaka,<br/>SSH tunnel + cookie auth)"]
@@ -31,10 +34,14 @@ flowchart LR
     bake -->|"Parler → seed.wav"| library
     library -->|"reference WAV"| chatter
     kokoro -->|"PCM"| server
+    kokoro -->|"source PCM"| rvc
     chatter -->|"PCM"| server
     pmodels -->|"onnx voice"| sidecar
     sidecar -->|"framed PCM (pipe)"| piper
     piper -->|"PCM"| server
+    rmodels -->|"model + index"| rvc_sidecar
+    rvc_sidecar -->|"framed PCM (pipe)"| rvc
+    rvc -->|"PCM"| server
     server -->|"HTTP /v1/audio/speech<br/>raw PCM 24kHz mono f32 LE"| repl
     server -->|"WS over SSH tunnel"| proxy
     proxy -->|"WS /v1/audio/stream"| web
@@ -51,8 +58,9 @@ Three deployable units, each with one clear responsibility:
 
 1. **Server** (`hosaka/server/`) — holds the two GPU models resident in VRAM,
    exposes an OpenAI-shaped HTTP API, streams raw PCM. It also spawns and talks
-   to a CPU-only **Piper sidecar** (`.venv-piper`) for neural character voices;
-   the server venv itself never imports piper.
+   to a CPU-only **Piper sidecar** (`.venv-piper`) for neural character voices
+   and a GPU **RVC sidecar** (`.venv-rvc`) for voice-converted character voices;
+   the server venv itself never imports piper or rvc-python.
 2. **REPL client** (`hosaka/cli/repl.py`) — connects to the server (deferring to
    the systemd unit, spawning its own only as a fallback), reads lines, pipes
    streamed PCM into `pacat`.
@@ -69,6 +77,7 @@ voices AND hits <1s on this card. So the work is split:
 | **Kokoro-82M** | presets + the realtime path | tiny, fast, ~28 English voices | ~60ms to first audio |
 | **Chatterbox** (original, `davidbrowne17/chatterbox-streaming`) | cloning + tuning | best open zero-shot clone, keeps `exaggeration`/`cfg_weight`/`temperature` | RTF ~0.8; ~4s to first audio (see below) |
 | **Piper** (VITS, CPU) | fixed character voices (GLaDOS) | pretrained single-speaker `.onnx` voices, non-autoregressive — runs off-GPU and beats realtime | RTF 0.04-0.2; ~40-80ms to first audio |
+| **RVC v2** (GPU sidecar) | converted character voices (Charlie) | retrieval-based voice conversion over a Kokoro neutral source; GPU but tiny (~0.5-1 GB VRAM) | warm RTF ~0.05; cold ~1.7s one-time |
 | **Parler-TTS Mini** (offline) | style-prompt voice authoring | only model that designs a voice from words | irrelevant (offline) |
 
 Kokoro and Chatterbox stay pinned in VRAM (~5-6 GB of 16); Piper runs CPU-only
@@ -126,6 +135,53 @@ voice id), so adding a character = drop a model + one `PIPER_VOICES` entry in
 not built and the server runs Kokoro + Chatterbox as before. Piper is CPU-bound
 but for now still routes through the same GPU admission queue as the other
 backends (serialized); letting it bypass the queue is a possible follow-up.
+
+### Character voices 2: RVC
+
+Charlie Morningstar and future RVC voices are handled by a second character-voice
+path: RVC v2 (Retrieval-based Voice Conversion). The data flow per fragment, inside
+ONE held GPU slot:
+
+1. `RvcEngine` asks its embedded Kokoro instance to synthesize a **neutral source**
+   PCM — gender + accent chosen by `SOURCE_PRESETS` keyed on the character's
+   declared `(gender, accent)` tuple. Charlie = (female, american) → preset
+   `af_sarah`.
+2. The full fragment PCM is piped to the `.venv-rvc` GPU sidecar
+   (`rvc_sidecar.py`) over the `rvc_proto` wire (JSON header + length-prefixed
+   float32).
+3. The sidecar runs: HuBERT/ContentVec encode → rmvpe F0 estimation (+transpose
+   if configured) → faiss index retrieval → net_g synthesis at the model's native
+   **40 kHz** → resample 40k→24k → framed PCM back on the pipe.
+4. `RvcEngine` yields the converted PCM frames.
+
+`RvcEngine` wraps Kokoro as its source, so `app.py`'s request path, GPU queue,
+and serialization are completely unchanged. Both GPU operations (Kokoro source in
+the server process, RVC conversion in the sidecar process) run sequentially inside
+the one held slot per request. The two CUDA contexts coexist at roughly
+5-6 GB (server) + 0.5-1 GB (sidecar) ≈ 7 GB of 16.
+
+`resolve_source()` in `config.py` validates the configured source against the
+declared `(gender, accent)` tuple and raises a loud `ValueError` on mismatch so
+misconfiguration is caught at startup, not silently. Kokoro's English is
+American or British only; no other accents are supported as sources.
+
+rvc-python self-manages its HuBERT and rmvpe checkpoints in its own package
+directory; `scripts/setup_rvc_venv.sh` pre-seeds them via symlinks from
+`~/.local/share/hosaka/rvc/` to avoid the auto-download. The sidecar therefore
+takes no `--hubert`/`--rmvpe` args — only `--voice id=pth:index`.
+
+Because rvc-python and fairseq print to stdout on model load and the sidecar's
+stdout is the binary frame pipe, the sidecar redirects fd 1 → stderr at startup
+and keeps the original fd for frames; library chatter cannot corrupt the protocol.
+(The Piper sidecar was silent and never needed this.)
+
+The fragment split for RVC uses the plain sentence split (same as Kokoro), not
+the Chatterbox ramp; warm RTF is ~0.045, well inside the gapless budget.
+
+Adding a character = drop a model + index + one `RVC_VOICES` entry in `config.py`,
+exactly like Piper. If `.venv-rvc`, the sidecar interpreter, or every voice's
+model+index are absent, `_make_rvc()` returns `None` and the server runs the
+other engines unchanged.
 
 ## Request path
 
@@ -223,19 +279,34 @@ this box over an SSH tunnel and gates it behind that app's session-cookie auth �
 no ports are opened on the home box. The bundled `/app/` client is for local
 testing.
 
-## Why three venvs
+## Why five venvs
 
-`.venv-server`, the bake CLI (`.venv-bake`) and the Piper sidecar (`.venv-piper`)
-are separate Python environments. Parler hard-pins an old `transformers`, and
-Chatterbox needs `transformers==4.46.3`; keeping Parler isolated means its
-dependency constraints can never poison the live server. Piper pulls
-`onnxruntime` + its own numpy; even though those happen to be compatible today,
-isolating them keeps the delicate torch/Kokoro/Chatterbox stack untouchable, and
-lets piper stay a CPU-only process. Both side environments communicate with the
-server only out-of-process — bake writes a WAV to disk, the Piper sidecar streams
-PCM over a pipe — and the server venv imports neither Parler nor piper. See
-`scripts/setup_server_venv.sh`, `scripts/setup_bake_venv.sh` and
-`scripts/setup_piper_venv.sh` for the exact recipes.
+`.venv-server`, the bake CLI (`.venv-bake`), the Piper sidecar (`.venv-piper`),
+and the RVC sidecar (`.venv-rvc`) are separate Python environments (plus
+`.venv-dev` for the non-GPU test suite).
+
+Parler hard-pins an old `transformers`, and Chatterbox needs
+`transformers==4.46.3`; keeping Parler isolated means its dependency constraints
+can never poison the live server. Piper pulls `onnxruntime` + its own numpy; even
+though those happen to be compatible today, isolating them keeps the delicate
+torch/Kokoro/Chatterbox stack untouchable, and lets piper stay a CPU-only process.
+
+`.venv-rvc` requires **Python 3.10** (not the system 3.12) because fairseq 0.12.2
+and its pinned omegaconf 2.0.6 / hydra-core 1.0.7 use the pre-3.11
+mutable-default dataclass pattern that Python 3.11+ rejects; patching it cascades
+into omegaconf's config validation. Python 3.10 is provided by `uv` as a prebuilt
+standalone (no sudo, no compile). fairseq must be installed from git (not PyPI
+0.12.2) because the wheel imports `torch._six`, removed in torch 2.0; it must be
+built with `--no-build-isolation`, `setuptools<81`, and `pip<24.1` (modern pip
+rejects omegaconf 2.0.6's metadata). The RVC sidecar is GPU-using but isolated
+for these dependency reasons, not runtime ones.
+
+All side environments communicate with the server only out-of-process — bake
+writes a WAV to disk, the Piper sidecar streams PCM over a pipe, the RVC sidecar
+streams PCM over a pipe — and the server venv imports neither Parler, piper, nor
+rvc-python. See `scripts/setup_server_venv.sh`, `scripts/setup_bake_venv.sh`,
+`scripts/setup_piper_venv.sh`, and `scripts/setup_rvc_venv.sh` for the exact
+recipes.
 
 ## Module map
 
@@ -255,6 +326,9 @@ PCM over a pipe — and the server venv imports neither Parler nor piper. See
 | `hosaka/server/engines/piper_engine.py` | Piper sidecar client (character voices) |
 | `hosaka/server/engines/piper_sidecar.py` | Piper synth worker (runs in `.venv-piper`) |
 | `hosaka/server/engines/piper_proto.py` | pipe wire protocol shared by both |
+| `hosaka/server/engines/rvc_engine.py` | RVC sidecar client (wraps Kokoro source + drives sidecar) |
+| `hosaka/server/engines/rvc_sidecar.py` | RVC synth worker (runs ONLY in `.venv-rvc`) |
+| `hosaka/server/engines/rvc_proto.py` | RVC pipe wire protocol (JSON header + length-prefixed PCM) |
 | `hosaka/cli/replcmd.py` | REPL colon-command parser |
 | `hosaka/cli/repl.py` | REPL client (auto-spawn, stream, play) |
 | `hosaka/cli/bake.py` | offline Parler voice-bake CLI |

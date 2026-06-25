@@ -7,11 +7,12 @@ the full design and `README.md` for install + usage.
 
 A local near-real-time TTS tool: a FastAPI server holding two models resident in
 VRAM (Kokoro for realtime presets, Chatterbox for cloning) plus a CPU Piper
-sidecar for fixed character voices (GLaDOS), a REPL client that streams PCM to
+sidecar for fixed character voices (GLaDOS), a GPU RVC sidecar for
+voice-converted character voices (Charlie), a REPL client that streams PCM to
 `pacat`, and an isolated offline Parler "bake" CLI that designs voices from text.
 Single user, English only, runs on a Blackwell RTX 5070 Ti under WSL2.
 
-## Environments — there are FOUR venvs, use the right one
+## Environments — there are FIVE venvs, use the right one
 
 | Venv | Holds | Use for |
 |------|-------|---------|
@@ -19,6 +20,7 @@ Single user, English only, runs on a Blackwell RTX 5070 Ti under WSL2.
 | `.venv-server` | torch cu128 + Kokoro + Chatterbox + server deps | running the server, GPU tests |
 | `.venv-bake` | torch cu128 + Parler (pinned old transformers) | the bake CLI only |
 | `.venv-piper` | piper-tts + onnxruntime + scipy (CPU, NO torch) | the Piper character-voice sidecar only |
+| `.venv-rvc` | python3.10 (uv); torch cu128 + rvc-python + fairseq-git | the RVC voice-conversion sidecar only |
 
 Run the non-GPU suite: `.venv-dev/bin/python -m pytest -m "not gpu"`
 Run GPU tests:        `PYTHONPATH=$PWD .venv-server/bin/python -m pytest -m gpu`
@@ -29,7 +31,10 @@ replcmd, audio, server/app with a FakeEngine) run in `.venv-dev`. The Piper
 sidecar (`piper_sidecar.py`) imports piper/onnxruntime and runs ONLY in
 `.venv-piper` — never import it from the server. Its client (`piper_engine.py`,
 numpy + subprocess only) and the wire protocol (`piper_proto.py`) are pure and
-tested in `.venv-dev` by driving a fake sidecar over a real pipe.
+tested in `.venv-dev` by driving a fake sidecar over a real pipe. The RVC
+sidecar (`rvc_sidecar.py`) imports rvc-python/fairseq and runs ONLY in
+`.venv-rvc`; its client (`rvc_engine.py`) and protocol (`rvc_proto.py`) are pure
+and tested in `.venv-dev` the same way.
 
 ## Hard rules (these were learned the hard way — do not break them)
 
@@ -48,6 +53,34 @@ tested in `.venv-dev` by driving a fake sidecar over a real pipe.
   talks over the `piper_proto` pipe. Character voices are pretrained `.onnx`
   downloads (NO training here) — add one with a `PIPER_VOICES` entry +
   `scripts/fetch_glados_model.sh`. Setup: `scripts/setup_piper_venv.sh`.
+  The GLaDOS Piper path is unchanged by the addition of RVC.
+- **RVC requires Python 3.10 (not 3.12) in `.venv-rvc`.** fairseq 0.12.2 and its
+  pinned omegaconf 2.0.6 / hydra-core 1.0.7 use the pre-3.11 mutable-default
+  dataclass pattern that Python 3.11+ rejects. Python 3.10 is provided by `uv`
+  as a prebuilt standalone (no sudo, no compile; headers included). fairseq must
+  come from git (`git+https://github.com/facebookresearch/fairseq.git`), NOT the
+  PyPI 0.12.2 wheel (it imports `torch._six`, removed in torch 2.0), built with
+  `--no-build-isolation`; also requires `setuptools<81` (setuptools 81 removed
+  `pkg_resources`) and `pip<24.1` for the legacy metadata. Full recipe:
+  `scripts/setup_rvc_venv.sh`; gated by `scripts/verify_rvc.py` (real
+  conversion, capability (12,0), warm RTF).
+- **The server never imports rvc-python.** It spawns `rvc_sidecar.py` under
+  `.venv-rvc` and talks over the `rvc_proto` pipe. rvc-python self-manages its
+  HuBERT and rmvpe checkpoints in its own package directory; `setup_rvc_venv.sh`
+  pre-seeds them via symlinks from `~/.local/share/hosaka/rvc/` so the
+  auto-download never runs. The sidecar takes no `--hubert`/`--rmvpe` args.
+- **RVC source preset must match character gender+accent.** `SOURCE_PRESETS` in
+  `config.py` maps `(gender, accent)` -> a neutral Kokoro preset. Charlie =
+  (female, american) -> `af_sarah`. `resolve_source()` raises a loud `ValueError`
+  on mismatch so misconfiguration is caught at startup. Kokoro English = American
+  or British only; no other accents.
+- **RVC sidecar redirects stdout to stderr at startup.** rvc-python and fairseq
+  print model-load messages to stdout, but the sidecar's stdout is the binary
+  frame pipe. fd 1 is redirected to stderr before any imports so library chatter
+  cannot corrupt the protocol. Do not remove this redirect.
+- **Charlie is native 40 kHz; the sidecar resamples to 24k.** Do not change the
+  model's synthesis sample rate. Adding an RVC character = drop model + index +
+  one `RVC_VOICES` entry in `config.py` (data-only, like Piper).
 - **Audio:** install only `pulseaudio-utils` (client). NEVER `apt install
   pulseaudio` (the daemon) — it breaks WSLg audio. Never install Linux GPU
   drivers or `cuda`/`cuda-drivers` meta-packages inside WSL. WSLg's RDP bridge
@@ -100,7 +133,8 @@ and `.venv-dev/bin/ruff format`. Keep the suite green
 
 ## Verify a change end-to-end
 
-`bash scripts/smoke_server.sh` starts the real server, hits all three backends
-(Kokoro, Chatterbox, Piper/GLaDOS), plays through `pacat`, and shuts down.
+`bash scripts/smoke_server.sh` starts the real server, hits all four backends
+(Kokoro, Chatterbox, Piper/GLaDOS, RVC/Charlie), plays through `pacat`, and
+shuts down.
 `scripts/benchmark_latency.py` gates the Kokoro realtime path (<1s first chunk)
 and reports Chatterbox quality-mode timing.
