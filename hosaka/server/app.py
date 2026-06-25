@@ -29,11 +29,12 @@ from hosaka.server.engines.base import EngineRegistry
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"  # bundled browser client
 
 # Curated to a single preset by choice -- the other ~28 Kokoro voices are not
-# offered. (af_nicole = American female, soft and intimate.)
-KOKORO_PRESETS = ["af_nicole"]
+# offered. "nicole" is the display name; KOKORO_ALIASES maps it to the af_nicole
+# embedding.
+KOKORO_PRESETS = ["nicole"]
 
 KOKORO_DESC = {
-    "af_nicole": "American female, soft and intimate",
+    "nicole": "American female, soft and intimate",
 }
 
 
@@ -230,6 +231,7 @@ def create_app(
                 backend="chatterbox",
                 source=e.source,
                 description=e.params.get("description", ""),
+                cb=True,
             ).model_dump()
             for e in library.list()
             if e.id not in rvc_sources
@@ -251,6 +253,7 @@ def create_app(
                     backend="rvc",
                     source="rvc",
                     description=RVC_VOICES.get(vid, {}).get("description", ""),
+                    cb=RVC_VOICES.get(vid, {}).get("source_backend") == "chatterbox",
                 ).model_dump()
                 for vid in registry.rvc.voice_ids
             ]

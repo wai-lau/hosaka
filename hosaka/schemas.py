@@ -22,6 +22,7 @@ class VoiceInfo(BaseModel):
     backend: str
     source: str
     description: str = ""
+    cb: bool = False  # generation runs through Chatterbox -> the cb knobs apply
 
 
 def _clamp(x, lo, hi):

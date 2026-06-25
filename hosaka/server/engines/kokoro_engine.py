@@ -1,7 +1,7 @@
 import numpy as np
 from kokoro import KPipeline
 
-from hosaka.config import KOKORO_WARMUP_VOICE
+from hosaka.config import KOKORO_ALIASES, KOKORO_WARMUP_VOICE
 
 
 class KokoroEngine:
@@ -16,6 +16,7 @@ class KokoroEngine:
 
     def stream(self, text, voice, params):
         speed = float(params.get("speed", 1.0))
+        voice = KOKORO_ALIASES.get(voice, voice)  # display id -> real embedding
         for _gs, _ps, audio in self._pipe(text, voice=voice, speed=speed):
             arr = audio.detach().cpu().numpy().astype(np.float32)
             yield np.ascontiguousarray(arr.reshape(-1))

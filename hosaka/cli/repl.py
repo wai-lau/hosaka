@@ -259,10 +259,7 @@ def main():
                         print(f"  {'removed' if removed else 'not found'}: {val}")
                 elif a.kind == "voices":
                     for v in httpx.get(f"{SERVER_URL}/v1/voices").json():
-                        desc = f"  {v['id']:20s} {v['backend']:11s} {v['source']:9s}"
-                        if v.get("description"):
-                            desc += f"  {v['description']}"
-                        print(desc)
+                        print(f"  {v['id']:20s} {'cb' if v.get('cb') else 'non-cb'}")
                 elif a.kind == "status":
                     print(f"  voice   {voice}  ({backend})")
                     for label, key in (

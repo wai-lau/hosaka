@@ -51,7 +51,7 @@ def test_voices_lists_presets_and_library(tmp_path):
     seed.write_bytes(b"RIFFfake")
     lib.add("myclone", seed, source="recording")
     ids = {v["id"] for v in client.get("/v1/voices").json()}
-    assert "af_nicole" in ids  # a preset
+    assert "nicole" in ids  # a preset
     assert "myclone" in ids  # a library clip
 
 
@@ -61,15 +61,35 @@ def test_voices_include_descriptions(tmp_path):
     seed.write_bytes(b"RIFFfake")
     lib.add("baked", seed, source="bake", params={"description": "a gruff narrator"})
     voices = {v["id"]: v for v in client.get("/v1/voices").json()}
-    assert voices["af_nicole"]["description"]  # presets get a hardcoded blurb
+    assert voices["nicole"]["description"]  # presets get a hardcoded blurb
     assert voices["baked"]["description"] == "a gruff narrator"  # from bake params
+
+
+def test_voices_cb_flag(tmp_path):
+    # cb = generation runs through Chatterbox (the cb knobs apply). Kokoro presets
+    # are non-cb; library/chatterbox clips are cb.
+    client, lib = _client(tmp_path)
+    seed = tmp_path / "s.wav"
+    seed.write_bytes(b"RIFFfake")
+    lib.add("clip", seed, source="recording")
+    voices = {v["id"]: v for v in client.get("/v1/voices").json()}
+    assert voices["nicole"]["cb"] is False
+    assert voices["clip"]["cb"] is True
+
+
+def test_voices_rvc_cb_from_source_backend(tmp_path):
+    # An rvc voice is cb iff its source engine is chatterbox (per RVC_VOICES).
+    client, _ = _client_with_rvc(tmp_path)
+    voices = {v["id"]: v for v in client.get("/v1/voices").json()}
+    assert voices["charlie"]["cb"] is True  # RVC_VOICES["charlie"] sources from chatterbox
+    assert voices["charlie2"]["cb"] is False  # not in RVC_VOICES -> default
 
 
 def test_speech_streams_pcm_bytes(tmp_path):
     client, _ = _client(tmp_path)
     r = client.post(
         "/v1/audio/speech",
-        json={"input": "Hello. World.", "backend": "kokoro", "voice": "af_nicole"},
+        json={"input": "Hello. World.", "backend": "kokoro", "voice": "nicole"},
     )
     assert r.status_code == 200
     assert len(r.content) > 0
@@ -83,14 +103,14 @@ def test_speech_unknown_backend_is_400(tmp_path):
 
 
 def test_speech_unknown_kokoro_voice_is_400(tmp_path):
-    # "nicole" is not a preset ("af_nicole" is); reject before the stream opens.
+    # An unoffered voice is rejected before the stream opens.
     client, _ = _client(tmp_path)
     r = client.post(
         "/v1/audio/speech",
-        json={"input": "hi", "backend": "kokoro", "voice": "nicole"},
+        json={"input": "hi", "backend": "kokoro", "voice": "bogus_voice"},
     )
     assert r.status_code == 400
-    assert "nicole" in r.json()["detail"]
+    assert "bogus_voice" in r.json()["detail"]
 
 
 def test_speech_unknown_chatterbox_voice_is_400(tmp_path):
@@ -177,7 +197,7 @@ def test_speech_engine_error_is_not_silent(tmp_path):
     with pytest.raises(RuntimeError, match="engine boom"):
         client.post(
             "/v1/audio/speech",
-            json={"input": "hi", "backend": "kokoro", "voice": "af_nicole"},
+            json={"input": "hi", "backend": "kokoro", "voice": "nicole"},
         )
 
 
@@ -203,7 +223,7 @@ def test_fatal_cuda_error_triggers_shutdown(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="device-side assert"):
         client.post(
             "/v1/audio/speech",
-            json={"input": "hi", "backend": "kokoro", "voice": "af_nicole"},
+            json={"input": "hi", "backend": "kokoro", "voice": "nicole"},
         )
     assert hits.get("hit")
 
@@ -220,7 +240,7 @@ def test_ordinary_engine_error_does_not_shutdown(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="engine boom"):
         client.post(
             "/v1/audio/speech",
-            json={"input": "hi", "backend": "kokoro", "voice": "af_nicole"},
+            json={"input": "hi", "backend": "kokoro", "voice": "nicole"},
         )
     assert not hits.get("hit")
 
@@ -231,7 +251,7 @@ def test_lock_released_after_request(tmp_path):
     for _ in range(3):
         r = client.post(
             "/v1/audio/speech",
-            json={"input": "Hello.", "backend": "kokoro", "voice": "af_nicole"},
+            json={"input": "Hello.", "backend": "kokoro", "voice": "nicole"},
         )
         assert r.status_code == 200
 
@@ -267,7 +287,7 @@ class GatedEngine:
         pass
 
 
-KOKORO_REQ = {"input": "hi", "backend": "kokoro", "voice": "af_nicole"}
+KOKORO_REQ = {"input": "hi", "backend": "kokoro", "voice": "nicole"}
 
 
 async def _wait(flag: threading.Event):
@@ -347,7 +367,7 @@ def _drain_ws(ws):
 def test_ws_streams_pcm_frames(tmp_path):
     client, _ = _client(tmp_path)
     with client.websocket_connect("/v1/audio/stream") as ws:
-        ws.send_json({"input": "Hello.", "backend": "kokoro", "voice": "af_nicole"})
+        ws.send_json({"input": "Hello.", "backend": "kokoro", "voice": "nicole"})
         pcm = _drain_ws(ws)
     assert len(pcm) > 0
     assert len(pcm) % 4 == 0  # float32 == 4 bytes/sample
@@ -356,12 +376,12 @@ def test_ws_streams_pcm_frames(tmp_path):
 def test_ws_unknown_voice_sends_error_and_stays_open(tmp_path):
     client, _ = _client(tmp_path)
     with client.websocket_connect("/v1/audio/stream") as ws:
-        ws.send_json({"input": "hi", "backend": "kokoro", "voice": "nicole"})
+        ws.send_json({"input": "hi", "backend": "kokoro", "voice": "bogus_voice"})
         err = ws.receive_json()
         assert err["type"] == "error"
-        assert "nicole" in err["detail"]
+        assert "bogus_voice" in err["detail"]
         # connection survives a bad request: a good one still streams.
-        ws.send_json({"input": "hi", "backend": "kokoro", "voice": "af_nicole"})
+        ws.send_json({"input": "hi", "backend": "kokoro", "voice": "nicole"})
         assert len(_drain_ws(ws)) > 0
 
 
@@ -369,7 +389,7 @@ def test_ws_multiple_utterances_one_connection(tmp_path):
     client, _ = _client(tmp_path)
     with client.websocket_connect("/v1/audio/stream") as ws:
         for _ in range(3):
-            ws.send_json({"input": "hi", "backend": "kokoro", "voice": "af_nicole"})
+            ws.send_json({"input": "hi", "backend": "kokoro", "voice": "nicole"})
             assert len(_drain_ws(ws)) > 0
 
 
