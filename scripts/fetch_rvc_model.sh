@@ -2,8 +2,8 @@
 # Fetch RVC assets + the Charlie Morningstar voice into the hosaka data dir.
 #
 #   hubert_base.pt, rmvpe.pt   canonical RVC assets (lj1995/VoiceConversionWebUI)
-#   charlie                    ScruffyRVC/RFCRVCV2 charlie-morningstar-v3.zip
-#                              (RVC V2, 32k; contains the .pth + .index)
+#   charlie                    Loren85/Charlie-MorningStar-New-Voice (RVC V2;
+#                              "definitive" build, contains the .pth + .index)
 #
 # Only the trained weights are fetched. Idempotent: skips files already present.
 set -euo pipefail
@@ -28,8 +28,8 @@ mkdir -p "$CDIR"
 if [ -f "${CDIR}/charlie.pth" ] && [ -f "${CDIR}/charlie.index" ]; then
   echo "have    charlie/charlie.{pth,index}"
 else
-  ZIP="${CDIR}/charlie-morningstar-v3.zip"
-  fetch "${HF}/ScruffyRVC/RFCRVCV2/resolve/main/charlie-morningstar-v3.zip?download=true" "$ZIP"
+  ZIP="${CDIR}/charlie.zip"
+  fetch "${HF}/Loren85/Charlie-MorningStar-New-Voice/resolve/main/Charlie-New-Voice-.zip" "$ZIP"
   echo "unzip   charlie"
   unzip -o -j "$ZIP" -d "$CDIR" >/dev/null
   # Normalize whatever the archive named them to charlie.{pth,index}.

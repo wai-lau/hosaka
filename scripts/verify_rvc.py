@@ -56,15 +56,20 @@ def main():
 
     with tempfile.TemporaryDirectory() as d:
         src = str(Path(d) / "src.wav")
-        out = str(Path(d) / "out.wav")
         seconds = _source_wav(src)
+        # The first conversion is cold (CUDA + kernel JIT, lazy init) -- the
+        # sidecar pays this once at warmup. Measure the warm steady-state RTF.
+        rvc.infer_file(src, str(Path(d) / "cold.wav"))
+        out = str(Path(d) / "out.wav")
         t0 = time.perf_counter()
         rvc.infer_file(src, out)
         dt = time.perf_counter() - t0
         wav, sr = sf.read(out, dtype="float32")
 
     assert np.isfinite(wav).all() and np.abs(wav).max() > 1e-3, "silent / non-finite output"
-    print(f"convert ok: {seconds:.1f}s @ model {sr} Hz, {dt:.2f}s wall, RTF {dt / seconds:.2f}")
+    print(
+        f"convert ok: {seconds:.1f}s @ model {sr} Hz, warm {dt:.2f}s wall, RTF {dt / seconds:.3f}"
+    )
     print("VERIFY_RVC_DONE")
 
 
