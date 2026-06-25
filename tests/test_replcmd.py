@@ -97,6 +97,17 @@ def test_pron_unknown_subcommand_is_error():
     assert parse_line(":pron frob x").kind == "error"
 
 
+def test_backend_accepts_all_three():
+    assert parse_line(":backend kokoro").value == "kokoro"
+    assert parse_line(":backend chatterbox").value == "chatterbox"
+    assert parse_line(":backend piper").value == "piper"
+    assert parse_line(":backend piper").kind == "backend"
+
+
+def test_backend_unknown_is_error():
+    assert parse_line(":backend bogus").kind == "error"
+
+
 def _fake_input(monkeypatch, items):
     """Drive _input_lines: feed strings to return, exception instances to raise."""
     seq = iter(items)

@@ -55,6 +55,7 @@ PY
 
 play kokoro af_heart "Hello, this is hosaka speaking with a preset voice."
 play chatterbox calm_brit "And this is a cloned voice in quality mode."
+play piper glados "Oh. It's you. The neural voice subsystem is, regrettably, functioning."
 
 echo "=== shutdown ==="
 .venv-server/bin/python -c "import httpx; httpx.post('$BASE/shutdown',timeout=2)" 2>/dev/null

@@ -47,9 +47,9 @@ def parse_line(line: str) -> ReplAction:
             ReplAction("clone", args[0]) if args else ReplAction("error", "usage: :clone <id|path>")
         )
     if cmd == "backend":
-        if args and args[0] in ("kokoro", "chatterbox"):
+        if args and args[0] in ("kokoro", "chatterbox", "piper"):
             return ReplAction("backend", args[0])
-        return ReplAction("error", "usage: :backend kokoro|chatterbox")
+        return ReplAction("error", "usage: :backend kokoro|chatterbox|piper")
     if cmd == "pron":
         sub = args[0] if args else "list"
         if sub == "list":

@@ -26,6 +26,18 @@ def _client(tmp_path):
     return TestClient(create_app(reg, lib, do_warmup=False)), lib
 
 
+class PiperFakeEngine(FakeEngine):
+    # Two voices to prove multi-voice listing/routing; the second is a test-only
+    # id (prod config currently ships just "glados").
+    voice_ids = ["glados", "glados2"]
+
+
+def _client_with_piper(tmp_path):
+    reg = EngineRegistry(kokoro=FakeEngine(), chatterbox=FakeEngine(), piper=PiperFakeEngine())
+    lib = VoiceLibrary(tmp_path / "voices")
+    return TestClient(create_app(reg, lib, do_warmup=False)), lib
+
+
 def test_health_ok(tmp_path):
     client, _ = _client(tmp_path)
     r = client.get("/health")
@@ -100,6 +112,54 @@ def test_speech_chatterbox_empty_voice_ok(tmp_path):
     assert r.status_code == 200
 
 
+def test_voices_list_piper_when_available(tmp_path):
+    from hosaka.config import PIPER_VOICES
+
+    client, _ = _client_with_piper(tmp_path)
+    voices = {v["id"]: v for v in client.get("/v1/voices").json()}
+    # Engine advertises every voice it serves (multi-voice), each tagged piper.
+    assert voices["glados"]["backend"] == "piper"
+    assert voices["glados2"]["backend"] == "piper"
+    assert voices["glados"]["description"] == PIPER_VOICES["glados"]["description"]
+
+
+def test_voices_omit_piper_when_unavailable(tmp_path):
+    client, _ = _client(tmp_path)  # registry has no piper engine
+    backends = {v["backend"] for v in client.get("/v1/voices").json()}
+    assert "piper" not in backends
+
+
+def test_speech_piper_voice_streams(tmp_path):
+    client, _ = _client_with_piper(tmp_path)
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "hi", "backend": "piper", "voice": "glados"},
+    )
+    assert r.status_code == 200
+    assert len(r.content) > 0
+    assert len(r.content) % 4 == 0
+
+
+def test_speech_unknown_piper_voice_is_400(tmp_path):
+    client, _ = _client_with_piper(tmp_path)
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "hi", "backend": "piper", "voice": "bogus"},
+    )
+    assert r.status_code == 400
+    assert "bogus" in r.json()["detail"]
+
+
+def test_speech_piper_unavailable_is_400(tmp_path):
+    # No piper engine in the registry -> the backend is rejected up front.
+    client, _ = _client(tmp_path)
+    r = client.post(
+        "/v1/audio/speech",
+        json={"input": "hi", "backend": "piper", "voice": "glados"},
+    )
+    assert r.status_code == 400
+
+
 class BoomEngine:
     def stream(self, text, voice, params):
         yield np.zeros(100, dtype=np.float32)
@@ -115,7 +175,10 @@ def test_speech_engine_error_is_not_silent(tmp_path):
     lib = VoiceLibrary(tmp_path / "voices")
     client = TestClient(create_app(reg, lib, do_warmup=False))
     with pytest.raises(RuntimeError, match="engine boom"):
-        client.post("/v1/audio/speech", json={"input": "hi", "backend": "kokoro"})
+        client.post(
+            "/v1/audio/speech",
+            json={"input": "hi", "backend": "kokoro", "voice": "af_heart"},
+        )
 
 
 class CudaBoomEngine:
@@ -166,7 +229,10 @@ def test_lock_released_after_request(tmp_path):
     # After a normal request completes, the GPU slot must be free for the next.
     client, _ = _client(tmp_path)
     for _ in range(3):
-        r = client.post("/v1/audio/speech", json={"input": "Hello.", "backend": "kokoro"})
+        r = client.post(
+            "/v1/audio/speech",
+            json={"input": "Hello.", "backend": "kokoro", "voice": "af_heart"},
+        )
         assert r.status_code == 200
 
 

@@ -1,6 +1,7 @@
 .venv-dev/
 .venv-server/
 .venv-bake/
+.venv-piper/
 __pycache__/
 *.pyc
 .pytest_cache/

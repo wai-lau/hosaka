@@ -26,7 +26,11 @@ async function loadVoices() {
   // group options by backend
   const groups = {};
   for (const v of voices) (groups[v.backend] ||= []).push(v);
-  const labels = { kokoro: "kokoro (realtime)", chatterbox: "chatterbox (clone)" };
+  const labels = {
+    kokoro: "kokoro (realtime)",
+    chatterbox: "chatterbox (clone)",
+    piper: "piper (character)",
+  };
   sel.innerHTML = "";
   for (const backend of Object.keys(groups)) {
     const og = document.createElement("optgroup");
@@ -49,8 +53,8 @@ function selectedBackend() {
   return o ? o.dataset.backend : "kokoro";
 }
 
-// Dim the chatterbox-only knobs when a kokoro voice is selected (they do
-// nothing there -- kokoro only honors speed).
+// Dim the chatterbox-only knobs for non-chatterbox voices (they do nothing
+// there -- kokoro and piper only honor speed).
 function reflectBackend() {
   $("cb-knobs").classList.toggle("off", selectedBackend() !== "chatterbox");
 }
