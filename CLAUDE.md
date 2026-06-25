@@ -141,6 +141,12 @@ and tested in `.venv-dev` the same way.
 and `.venv-dev/bin/ruff format`. Keep the suite green
 (`.venv-dev/bin/python -m pytest -m "not gpu"`).
 
+## Commits
+
+This repo is prod: **always `git push origin main` immediately after every
+commit**, so origin never lags the running/deployed code. (Overrides the default
+"commit/push only when asked".)
+
 ## Verify a change end-to-end
 
 `bash scripts/smoke_server.sh` starts the real server, hits all four backends
