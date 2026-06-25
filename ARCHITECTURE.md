@@ -143,10 +143,11 @@ Charlie Morningstar and future RVC voices are handled by a second character-voic
 path: RVC v2 (Retrieval-based Voice Conversion). The data flow per fragment, inside
 ONE held GPU slot:
 
-1. `RvcEngine` asks its embedded Kokoro instance to synthesize a **neutral source**
-   PCM — gender + accent chosen by `SOURCE_PRESETS` keyed on the character's
-   declared `(gender, accent)` tuple. Charlie = (female, american) → preset
-   `af_sarah`.
+1. `RvcEngine` asks its embedded Kokoro instance to synthesize the **source**
+   PCM — the Kokoro voice is the character's *match*: RVC preserves the source's
+   pitch contour, prosody and delivery and swaps only timbre, so the source's
+   energy carries through. `resolve_source` validates it is the character's
+   gender + accent. Charlie = `af_aoede` (bright/expressive), `transpose` +1.
 2. The full fragment PCM is piped to the `.venv-rvc` GPU sidecar
    (`rvc_sidecar.py`) over the `rvc_proto` wire (JSON header + length-prefixed
    float32).

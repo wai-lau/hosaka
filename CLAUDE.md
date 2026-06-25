@@ -69,11 +69,14 @@ and tested in `.venv-dev` the same way.
   HuBERT and rmvpe checkpoints in its own package directory; `setup_rvc_venv.sh`
   pre-seeds them via symlinks from `~/.local/share/hosaka/rvc/` so the
   auto-download never runs. The sidecar takes no `--hubert`/`--rmvpe` args.
-- **RVC source preset must match character gender+accent.** `SOURCE_PRESETS` in
-  `config.py` maps `(gender, accent)` -> a neutral Kokoro preset. Charlie =
-  (female, american) -> `af_sarah`. `resolve_source()` raises a loud `ValueError`
-  on mismatch so misconfiguration is caught at startup. Kokoro English = American
-  or British only; no other accents.
+- **RVC source = match-the-character.** RVC keeps the source's pitch contour,
+  prosody and delivery, swapping only timbre -- so a flat "neutral" base yields a
+  flat character. Each `RVC_VOICES` entry picks the Kokoro `source` whose energy
+  fits the character (Charlie = `af_aoede`, bright/expressive) plus a per-voice
+  `transpose` (Charlie +1). `resolve_source()` validates only that the source is
+  the right gender+accent (the Kokoro `af_`/`am_`/`bf_`/`bm_` prefix), a loud
+  `ValueError` otherwise. Kokoro English = American or British only; no other
+  accents.
 - **RVC sidecar redirects stdout to stderr at startup.** rvc-python and fairseq
   print model-load messages to stdout, but the sidecar's stdout is the binary
   frame pipe. fd 1 is redirected to stderr before any imports so library chatter

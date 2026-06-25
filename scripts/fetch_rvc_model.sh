@@ -2,8 +2,8 @@
 # Fetch RVC assets + the Charlie Morningstar voice into the hosaka data dir.
 #
 #   hubert_base.pt, rmvpe.pt   canonical RVC assets (lj1995/VoiceConversionWebUI)
-#   charlie                    Loren85/Charlie-MorningStar-New-Voice (RVC V2;
-#                              "definitive" build, contains the .pth + .index)
+#   charlie                    Darkynauta/HazbinHotel "Charlie Morningstar -
+#                              Erika Henningsen" (RVC V2, the English voice actor)
 #
 # Only the trained weights are fetched. Idempotent: skips files already present.
 set -euo pipefail
@@ -29,7 +29,7 @@ if [ -f "${CDIR}/charlie.pth" ] && [ -f "${CDIR}/charlie.index" ]; then
   echo "have    charlie/charlie.{pth,index}"
 else
   ZIP="${CDIR}/charlie.zip"
-  fetch "${HF}/Loren85/Charlie-MorningStar-New-Voice/resolve/main/Charlie-New-Voice-.zip" "$ZIP"
+  fetch "${HF}/Darkynauta/HazbinHotel/resolve/main/Charlie%20Morningstar%20-%20Erika%20Henningsen.zip" "$ZIP"
   echo "unzip   charlie"
   unzip -o -j "$ZIP" -d "$CDIR" >/dev/null
   # Normalize whatever the archive named them to charlie.{pth,index}.
