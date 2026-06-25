@@ -63,6 +63,7 @@ def _make_rvc(sources):
             "transpose": spec["transpose"],
             "passes": spec.get("passes", 1),
             "gate": spec.get("gate", False),
+            "speed": spec.get("speed", 1.0),
         }
     return RvcEngine(sources, cmd, voices=voices, knobs=dict(RVC_KNOBS))
 

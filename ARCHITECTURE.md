@@ -149,7 +149,11 @@ ONE held GPU slot:
    (realtime), so an expressive character instead sources from **Chatterbox
    cloning a real reference clip**: Charlie = a Chatterbox clone of `charlie_cb`
    (exaggeration 0.4, cfg_weight 0.5, temperature 0.3 -- the cb knobs), which
-   carries the emotion. A Kokoro-source voice still
+   carries the emotion. Those cb knobs are the voice's *defaults*: a request can
+   override any of them live (`_source_pcm` merges the request's cb knobs over
+   the voice's `source_params`), and `/v1/voices` ships each cb voice's defaults
+   as `cb_params` so the REPL preloads them on `:voice` (they round-trip the
+   character until the user tunes one). A Kokoro-source voice still
    follows the match-the-character preset rule (`resolve_source`); a
    Chatterbox-clone source is a library voice id. (`sources` maps backend ->
    engine; each voice picks one via `source_backend`.)
@@ -219,6 +223,13 @@ other engines unchanged.
    is `shield`-awaited), even on client disconnect — preserving the single-GPU
    serialization invariant and surfacing engine errors instead of returning a
    silently truncated `200`.
+6. A **per-generation watchdog** guards the slot: each queue read waits at most
+   `GEN_TIMEOUT_S` (default 120s). If a generation makes no progress for that long
+   the worker thread is presumed wedged on an uncancellable GPU call — it would
+   hold the single slot forever and hang every later request behind it. A Python
+   thread can't be killed, so the only clean recovery is `_do_shutdown()` (same
+   exit path as a fatal CUDA error); systemd respawns clean. This converts the
+   old silent infinite hang into a bounded blip + restart.
 
 `WS /v1/audio/stream` is the persistent-session variant for a web client: each
 JSON message (`SpeechRequest` shape) is one utterance; the server replies with a

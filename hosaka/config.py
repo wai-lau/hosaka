@@ -27,6 +27,16 @@ KOKORO_ALIASES = {"nicole": "af_nicole"}
 # not, so a deep queue there just means long waits.
 MAX_QUEUE = 16
 
+# Per-generation watchdog. If a single generation makes no progress (yields no
+# PCM chunk) for this many seconds, its GPU worker thread is presumed wedged --
+# a hung GPU call cannot be cancelled, so the stuck thread holds the single GPU
+# slot forever and every later request hangs behind it (the wedge seen under
+# sustained A/B load). A Python thread can't be killed, so the only clean
+# recovery is to exit and let systemd respawn. Set this generously above the
+# slowest real fragment synth; a true wedge is unbounded so the exact value only
+# bounds how long the silent hang lasts before recovery.
+GEN_TIMEOUT_S = 120.0
+
 # Playback gain applied client-side before pacat, clipped to [-1, 1].
 # Default 1.0 (off): WSLg's RDP audio bridge distorts HOT signals (adds static)
 # because amplifying here happens BEFORE the lossy RDP hop. For more loudness on

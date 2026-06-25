@@ -61,12 +61,25 @@ class RvcEngine:
             )
         return self._proc
 
+    # cb knobs the request may override on a Chatterbox-clone source (speed is
+    # NOT one -- for RVC it is an output tempo stretch, applied in the sidecar).
+    _CB_KNOBS = ("exaggeration", "cfg_weight", "temperature")
+
     def _source_pcm(self, text, voice, params) -> bytes:
         cfg = self._voices[voice]
-        engine = self._sources[cfg.get("source_backend", "kokoro")]
-        # A voice may pin its own source params (e.g. Chatterbox exaggeration for
-        # an expressive clone); otherwise pass through the request speed (Kokoro).
-        src_params = cfg.get("source_params") or {"speed": float(params.get("speed", 1.0))}
+        backend = cfg.get("source_backend", "kokoro")
+        engine = self._sources[backend]
+        if backend == "chatterbox":
+            # Start from the voice's tuned defaults, then let the request's live
+            # cb knobs override them. The REPL preloads these defaults on :voice,
+            # so they round-trip the character unless the user actually tunes one.
+            src_params = dict(cfg.get("source_params") or {})
+            for k in self._CB_KNOBS:
+                if k in params:
+                    src_params[k] = float(params[k])
+        else:
+            # Kokoro source: a pinned source_params wins, else pass the request speed.
+            src_params = cfg.get("source_params") or {"speed": float(params.get("speed", 1.0))}
         chunks = list(engine.stream(text, cfg["source"], src_params))
         if not chunks:
             return b""

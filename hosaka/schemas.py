@@ -23,6 +23,11 @@ class VoiceInfo(BaseModel):
     source: str
     description: str = ""
     cb: bool = False  # generation runs through Chatterbox -> the cb knobs apply
+    # The voice's tuned cb-knob defaults (exaggeration/cfg_weight/temperature),
+    # for an RVC voice whose source is a Chatterbox clone. A client preloads
+    # these on :voice so the knobs round-trip the character's defaults until the
+    # user tunes them. None for voices with no fixed source params.
+    cb_params: dict | None = None
 
 
 def _clamp(x, lo, hi):

@@ -228,6 +228,42 @@ def test_fatal_cuda_error_triggers_shutdown(tmp_path, monkeypatch):
     assert hits.get("hit")
 
 
+class HangEngine:
+    """Engine whose stream() blocks without ever yielding -- simulates a wedged
+    GPU call that can't be cancelled, so the watchdog must fire."""
+
+    def __init__(self):
+        self.release = threading.Event()
+
+    def stream(self, text, voice, params):
+        self.release.wait(5)  # never released within the test -> past the watchdog
+        yield np.zeros(10, dtype=np.float32)
+
+    def warmup(self):
+        pass
+
+
+def test_wedged_generation_triggers_shutdown(tmp_path, monkeypatch):
+    # A generation that makes no progress for GEN_TIMEOUT_S holds the GPU slot
+    # forever; the watchdog must exit (systemd respawns) instead of hanging every
+    # later request behind the dead slot.
+    import hosaka.server.app as appmod
+
+    monkeypatch.setattr(appmod, "GEN_TIMEOUT_S", 0.2)
+    hits = {}
+    monkeypatch.setattr(appmod, "_do_shutdown", lambda: hits.setdefault("hit", True))
+    eng = HangEngine()
+    reg = EngineRegistry(kokoro=eng, chatterbox=eng)
+    client = TestClient(create_app(reg, VoiceLibrary(tmp_path / "v"), do_warmup=False))
+    try:
+        r = client.post("/v1/audio/speech", json=KOKORO_REQ)
+        # The stream ends (truncated) rather than hanging forever, and shutdown fired.
+        assert r.status_code == 200
+        assert hits.get("hit")
+    finally:
+        eng.release.set()  # let the orphaned worker thread exit promptly
+
+
 def test_ordinary_engine_error_does_not_shutdown(tmp_path, monkeypatch):
     # A non-CUDA failure must surface but leave the server running.
     import hosaka.server.app as appmod
@@ -420,6 +456,17 @@ def test_voices_list_rvc_when_available(tmp_path):
     assert voices["charlie"]["backend"] == "rvc"
     assert voices["charlie2"]["backend"] == "rvc"
     assert voices["charlie"]["description"] == RVC_VOICES["charlie"]["description"]
+
+
+def test_voices_rvc_cb_params(tmp_path):
+    # A cb (chatterbox-sourced) rvc voice carries its tuned cb-knob defaults so a
+    # client can preload them on :voice; voices not in RVC_VOICES carry None.
+    from hosaka.config import RVC_VOICES
+
+    client, _ = _client_with_rvc(tmp_path)
+    voices = {v["id"]: v for v in client.get("/v1/voices").json()}
+    assert voices["charlie"]["cb_params"] == RVC_VOICES["charlie"]["source_params"]
+    assert voices["charlie2"]["cb_params"] is None
 
 
 def test_voices_omit_rvc_when_unavailable(tmp_path):

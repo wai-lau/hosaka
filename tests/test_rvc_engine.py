@@ -84,6 +84,20 @@ def test_stream_routes_to_per_voice_source_engine():
     eng.close()
 
 
+def test_chatterbox_source_merges_request_cb_knobs():
+    # A chatterbox-clone source starts from its pinned source_params, then the
+    # request's live cb knobs override them. speed is NOT a cb source knob (for
+    # RVC it is an output tempo stretch), so it must not leak into the source.
+    kok, cb = FakeSource(), FakeSource()
+    eng = RvcEngine({"kokoro": kok, "chatterbox": cb}, FAKE, voices=_voices(), knobs=dict(KNOBS))
+    list(eng.stream("Hi.", "cbvoice", {"exaggeration": 0.2, "temperature": 1.5, "speed": 1.3}))
+    sp = cb.calls[0][2]
+    assert sp["exaggeration"] == 0.2  # overridden from the pinned 0.7
+    assert sp["temperature"] == 1.5  # added from the request
+    assert "speed" not in sp  # speed never crosses into the chatterbox source
+    eng.close()
+
+
 def test_stream_sends_transpose_and_knobs_to_sidecar():
     eng = _engine()
     with pytest.raises(RvcSidecarError) as exc:

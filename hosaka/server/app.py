@@ -15,6 +15,7 @@ from hosaka.config import (
     CHATTERBOX_MAX_CHARS,
     FIRST_FRAGMENT_MAX_CHARS,
     FRAGMENT_GROWTH,
+    GEN_TIMEOUT_S,
     LEXICON_PATH,
     LLM_MODEL,
     MAX_QUEUE,
@@ -125,9 +126,20 @@ async def _pcm_frames(engine, voice, params, fragments, gpu_queue):
                     loop.call_soon_threadsafe(queue.put_nowait, None)
 
             fut = loop.run_in_executor(None, produce)
+            wedged = False
             try:
                 while True:
-                    item = await queue.get()
+                    try:
+                        item = await asyncio.wait_for(queue.get(), GEN_TIMEOUT_S)
+                    except TimeoutError:
+                        # No PCM for GEN_TIMEOUT_S: the worker thread is stuck on a
+                        # GPU call that can't be cancelled, so it holds the single
+                        # GPU slot forever and every later request would hang
+                        # behind it. A Python thread can't be killed; the only
+                        # clean recovery is to exit and let systemd respawn. Break
+                        # out (don't await the hung fut below) and shut down.
+                        wedged = True
+                        break
                     if item is None:
                         break
                     if isinstance(item, BaseException):
@@ -138,10 +150,15 @@ async def _pcm_frames(engine, voice, params, fragments, gpu_queue):
                         raise item
                     yield item
             finally:
-                # Hold the GPU slot until the worker thread has actually finished
-                # -- even on client disconnect -- so the single-GPU serialization
-                # invariant holds and no thread is orphaned.
-                await asyncio.shield(fut)
+                if wedged:
+                    _do_shutdown()
+                else:
+                    # Hold the GPU slot until the worker thread has actually
+                    # finished -- even on client disconnect -- so the single-GPU
+                    # serialization invariant holds and no thread is orphaned.
+                    await asyncio.shield(fut)
+            if wedged:
+                return
     finally:
         gpu_queue.release()
 
@@ -254,6 +271,11 @@ def create_app(
                     source="rvc",
                     description=RVC_VOICES.get(vid, {}).get("description", ""),
                     cb=RVC_VOICES.get(vid, {}).get("source_backend") == "chatterbox",
+                    cb_params=(
+                        RVC_VOICES.get(vid, {}).get("source_params")
+                        if RVC_VOICES.get(vid, {}).get("source_backend") == "chatterbox"
+                        else None
+                    ),
                 ).model_dump()
                 for vid in registry.rvc.voice_ids
             ]

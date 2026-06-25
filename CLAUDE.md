@@ -77,7 +77,12 @@ and tested in `.venv-dev` the same way.
   0.3) -> RVC erika, plus per-voice `gate` + `passes` + `speed` (tempo stretch).
   A voice sets
   `source_backend` (`kokoro`|`chatterbox`) + `source` (+ `source_params`); the
-  `sources` dict (in `_make_rvc`) maps backend -> engine. Kokoro sources still
+  `sources` dict (in `_make_rvc`) maps backend -> engine. The `source_params` cb
+  knobs are *defaults*, not fixed: `_source_pcm` merges a request's cb knobs
+  (exaggeration/cfg_weight/temperature -- NOT speed, which is the RVC output
+  stretch) over them, so `:exag` etc. tune Charlie live. `/v1/voices` ships each
+  cb voice's defaults as `cb_params`; the REPL preloads them on `:voice` so the
+  knobs round-trip the character until tuned. Kokoro sources still
   follow match-the-character -- `resolve_source` validates the
   `af_`/`am_`/`bf_`/`bm_` prefix (American/British only); a Chatterbox-clone
   source is just a library voice id. This is the quality path (~4-5s first audio),
@@ -127,7 +132,11 @@ and tested in `.venv-dev` the same way.
   GPU at a time, the rest line up, and only a full queue returns `503`. The cap
   check + reserve (`try_admit`) must stay atomic (no `await` between them) and the
   executor future must be held until done. See `hosaka/server/app.py` — do not
-  reintroduce an untracked `run_in_executor` future.
+  reintroduce an untracked `run_in_executor` future. A per-generation watchdog
+  (`GEN_TIMEOUT_S`) bounds each queue read: a generation that makes no progress
+  for that long is presumed wedged on an uncancellable GPU call (it would hold
+  the slot forever) and triggers `_do_shutdown()` so systemd respawns clean.
+  Do not remove it — the silent slot wedge under sustained load is what it cures.
 - Personal voice data lives in `~/.local/share/hosaka/voices` (untracked).
   Only the couple of sample seeds under `hosaka/sample_voices/` are committed.
 - Piper character voices are pretrained `.onnx` models under

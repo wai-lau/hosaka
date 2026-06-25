@@ -146,15 +146,17 @@ def _ensure_server() -> None:
         )
 
 
-def _voice_backend(name, fallback):
-    """Resolve a voice's real backend from the registry; fall back on miss."""
+def _voice_meta(name, fallback):
+    """Resolve a voice's (backend, cb_params) from the registry; fall back on
+    miss. cb_params is the voice's tuned cb-knob defaults (or None), used to
+    preload the REPL knobs so they round-trip the character until tuned."""
     try:
         for v in httpx.get(f"{SERVER_URL}/v1/voices", timeout=2.0).json():
             if v["id"] == name:
-                return v["backend"]
+                return v["backend"], v.get("cb_params")
     except Exception:
         pass
-    return fallback
+    return fallback, None
 
 
 def _speak(player, backend, voice, params, text):
@@ -221,7 +223,17 @@ def main():
                 elif a.kind == "voice":
                     name, text = a.value
                     voice = name
-                    backend = _voice_backend(name, backend)
+                    backend, cb_params = _voice_meta(name, backend)
+                    # Preload the character's tuned cb-knob defaults so :status
+                    # and the request reflect them; the user can still :exag etc.
+                    if cb_params:
+                        for k, val in cb_params.items():
+                            if k in params:
+                                params[k] = float(val)
+                        print(
+                            f"  loaded {voice} defaults: "
+                            + ", ".join(f"{k}={float(v):.2f}" for k, v in cb_params.items())
+                        )
                     if text:
                         _speak(player, backend, voice, params, text)
                 elif a.kind == "clone":
