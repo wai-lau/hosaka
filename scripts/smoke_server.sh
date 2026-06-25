@@ -16,7 +16,7 @@ SRV=$!
 
 echo "=== waiting for /health (model load + warmup) ==="
 ok=0
-for i in $(seq 1 120); do
+for i in $(seq 1 240); do  # RVC cold warmup (hubert+model load) adds ~50s
   if .venv-server/bin/python -c "import httpx,sys; sys.exit(0 if httpx.get('$BASE/health',timeout=1).status_code==200 else 1)" 2>/dev/null; then
     ok=1; echo "healthy after ~$((i*1))s checks"; break
   fi
@@ -56,6 +56,7 @@ PY
 play kokoro af_heart "Hello, this is hosaka speaking with a preset voice."
 play chatterbox calm_brit "And this is a cloned voice in quality mode."
 play piper glados "Oh. It's you. The neural voice subsystem is, regrettably, functioning."
+play rvc charlie "Hi there! I'm Charlie, and I really believe everyone deserves a second chance."
 
 echo "=== shutdown ==="
 .venv-server/bin/python -c "import httpx; httpx.post('$BASE/shutdown',timeout=2)" 2>/dev/null
