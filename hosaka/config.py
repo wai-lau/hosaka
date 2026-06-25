@@ -152,6 +152,7 @@ RVC_VOICES = {
         "accent": "american",
         "source": "af_aoede",  # match-the-character: bright/expressive fits Charlie
         "transpose": 1,  # semitones, tuned by ear
+        "passes": 2,  # double-pass RVC -- locks Charlie's timbre harder (chosen by ear)
         "description": "Charlie Morningstar (Hazbin Hotel), RVC V2 (Erika Henningsen)",
     },
 }

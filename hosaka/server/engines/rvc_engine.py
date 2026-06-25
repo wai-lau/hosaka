@@ -79,6 +79,7 @@ class RvcEngine:
             f0_method=str(self._knobs["f0_method"]),
             protect=float(self._knobs["protect"]),
             rms_mix_rate=float(self._knobs["rms_mix_rate"]),
+            passes=int(cfg.get("passes", 1)),
         )
         proc = self._ensure_proc()
         try:

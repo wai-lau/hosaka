@@ -91,6 +91,7 @@ def encode_request(
     f0_method: str,
     protect: float,
     rms_mix_rate: float,
+    passes: int = 1,
 ) -> bytes:
     header = (
         json.dumps(
@@ -101,6 +102,7 @@ def encode_request(
                 "f0_method": f0_method,
                 "protect": protect,
                 "rms_mix_rate": rms_mix_rate,
+                "passes": passes,
             }
         ).encode("utf-8")
         + b"\n"

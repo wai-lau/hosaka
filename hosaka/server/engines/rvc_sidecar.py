@@ -58,20 +58,30 @@ def load_voices(specs):
 
 
 def convert(rvc, req, out):
-    """Convert one request's source PCM to the target and stream it back."""
-    rvc.set_params(
-        f0method=req["f0_method"],
-        f0up_key=req["transpose"],
-        index_rate=req["index_rate"],
-        protect=req["protect"],
-        rms_mix_rate=req["rms_mix_rate"],
-    )
+    """Convert one request's source PCM to the target and stream it back.
+
+    Runs `passes` RVC passes in series (each pass's output feeds the next) -- a
+    2nd pass locks the timbre harder onto the target. The transpose is applied on
+    the FIRST pass ONLY; later passes use f0up_key 0, since re-shifting every pass
+    would compound the pitch.
+    """
+    passes = max(1, int(req.get("passes", 1)))
     src = np.frombuffer(req["pcm"], dtype="<f4")
     with tempfile.TemporaryDirectory() as d:
-        sp, op = str(Path(d) / "s.wav"), str(Path(d) / "o.wav")
-        sf.write(sp, src, SAMPLE_RATE, subtype="FLOAT")
-        rvc.infer_file(sp, op)  # writes at the model's native SR
-        wav, sr = sf.read(op, dtype="float32")
+        cur = str(Path(d) / "p_in.wav")
+        sf.write(cur, src, SAMPLE_RATE, subtype="FLOAT")
+        for i in range(passes):
+            rvc.set_params(
+                f0method=req["f0_method"],
+                f0up_key=req["transpose"] if i == 0 else 0,
+                index_rate=req["index_rate"],
+                protect=req["protect"],
+                rms_mix_rate=req["rms_mix_rate"],
+            )
+            nxt = str(Path(d) / f"p{i}.wav")
+            rvc.infer_file(cur, nxt)  # writes at the model's native SR
+            cur = nxt
+        wav, sr = sf.read(cur, dtype="float32")
     if wav.ndim > 1:
         wav = wav.mean(axis=1)
     if sr != SAMPLE_RATE:

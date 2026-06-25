@@ -55,7 +55,11 @@ def _make_rvc(source_engine):
     voices = {}
     for vid, spec in available.items():
         cmd += ["--voice", f"{vid}={spec['model']}:{spec['index']}"]
-        voices[vid] = {"source": resolve_source(spec), "transpose": spec["transpose"]}
+        voices[vid] = {
+            "source": resolve_source(spec),
+            "transpose": spec["transpose"],
+            "passes": spec.get("passes", 1),
+        }
     return RvcEngine(source_engine, cmd, voices=voices, knobs=dict(RVC_KNOBS))
 
 
