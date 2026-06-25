@@ -145,7 +145,7 @@ RVC_VOICES = {
     "charlie": {
         "model": RVC_DIR / "charlie" / "charlie.pth",
         "index": RVC_DIR / "charlie" / "charlie.index",
-        "model_sr": 32000,  # native; the sidecar resamples 32k -> 24k
+        "model_sr": 40000,  # native (Loren85 v2); the sidecar resamples 40k -> 24k
         "gender": "female",
         "accent": "american",
         "source": "af_sarah",  # must equal SOURCE_PRESETS[(female, american)]

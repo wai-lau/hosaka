@@ -7,7 +7,7 @@ def test_charlie_registered_female_american():
     c = RVC_VOICES["charlie"]
     assert c["gender"] == "female"
     assert c["accent"] == "american"
-    assert c["model_sr"] == 32000
+    assert c["model_sr"] == 40000
 
 
 def test_resolve_source_matches_tuple():

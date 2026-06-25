@@ -10,8 +10,11 @@ the model's native rate (e.g. 32k) down to the hosaka 24k, and streams framed
 float32 LE PCM back. A per-request failure becomes an error frame; the sidecar
 stays alive for the next request.
 
-  usage: rvc_sidecar.py --hubert hubert_base.pt --rmvpe rmvpe.pt \
-                        --voice charlie=/path/charlie.pth:/path/charlie.index
+  usage: rvc_sidecar.py --voice charlie=/path/charlie.pth:/path/charlie.index
+
+rvc-python self-manages the hubert/rmvpe assets in its own base_model dir
+(pre-seeded by scripts/setup_rvc_venv.sh from the fetched models), so no asset
+paths are passed here.
 """
 
 import argparse
@@ -35,15 +38,15 @@ from hosaka.server.engines.rvc_proto import (  # noqa: E402
 )
 
 
-def load_voices(specs, hubert, rmvpe):
-    """specs: ["id=pth:index", ...] -> {id: (RVCInference, model_sr)}.
+def load_voices(specs):
+    """specs: ["id=pth:index", ...] -> {id: RVCInference}.
 
-    One RVCInference per voice keeps each model resident. rvc-python locates the
-    HuBERT/rmvpe assets via its asset dir; point it at ours.
+    One RVCInference per voice keeps each model resident on the GPU. rvc-python
+    locates the hubert/rmvpe assets in its own base_model dir (pre-seeded by
+    setup_rvc_venv.sh from the fetched models), so no asset paths are needed here.
     """
     from rvc_python.infer import RVCInference
 
-    os.environ.setdefault("RVC_MODELDIR", str(Path(hubert).parent))  # assets live here
     voices = {}
     for spec in specs:
         vid, paths = spec.split("=", 1)
@@ -79,14 +82,21 @@ def convert(rvc, req, out):
 
 
 def main():
+    # rvc-python and fairseq are chatty on stdout (print() + INFO logging), but
+    # fd 1 is our binary protocol pipe to the engine. Save the real stdout for
+    # the frames, then redirect fd 1 -> stderr so nothing a library prints can
+    # corrupt the frame stream. (Piper's sidecar was silent, so it never needed
+    # this.) All library noise then flows to stderr.
+    protocol_out = os.fdopen(os.dup(1), "wb", buffering=0)
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+
     ap = argparse.ArgumentParser()
-    ap.add_argument("--hubert", required=True)
-    ap.add_argument("--rmvpe", required=True)
     ap.add_argument("--voice", action="append", default=[], metavar="id=pth:index")
     args = ap.parse_args()
-    voices = load_voices(args.voice, args.hubert, args.rmvpe)
+    voices = load_voices(args.voice)
 
-    out = sys.stdout.buffer
+    out = protocol_out
     while True:
         req = read_request(sys.stdin.buffer)
         if req is None:

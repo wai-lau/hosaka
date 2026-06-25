@@ -49,14 +49,7 @@ def _make_rvc(source_engine):
         or not available
     ):
         return None
-    cmd = [
-        str(RVC_PYTHON),
-        str(RVC_SIDECAR),
-        "--hubert",
-        str(RVC_HUBERT),
-        "--rmvpe",
-        str(RVC_RMVPE),
-    ]
+    cmd = [str(RVC_PYTHON), str(RVC_SIDECAR)]
     voices = {}
     for vid, spec in available.items():
         cmd += ["--voice", f"{vid}={spec['model']}:{spec['index']}"]
