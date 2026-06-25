@@ -74,7 +74,8 @@ and tested in `.venv-dev` the same way.
   flat character. Kokoro is flat (realtime), so an expressive character sources
   from **Chatterbox cloning a real reference clip**: Charlie = Chatterbox clone of
   the `charlie_cb` library voice (exaggeration 0.4 / cfg_weight 0.5 / temperature
-  0.3) -> RVC erika, plus per-voice `gate` + `passes` + `speed` (tempo stretch).
+  0.3) -> RVC erika, plus per-voice `gate` + `passes` + `speed` (tempo stretch,
+  phase-vocoder -- echoes/smears the voice, so Charlie ships `speed` 1.0 = off).
   A voice sets
   `source_backend` (`kokoro`|`chatterbox`) + `source` (+ `source_params`); the
   `sources` dict (in `_make_rvc`) maps backend -> engine. The `source_params` cb

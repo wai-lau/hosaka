@@ -175,7 +175,7 @@ RVC_VOICES = {
         "transpose": 0,  # the clone is already at Charlie's pitch
         "passes": 1,  # single pass -- a 2nd flattens the emotion
         "gate": True,  # mute the output where the source is silent
-        "speed": 1.1,  # tempo time-stretch on the output (Chatterbox has no speed knob)
+        "speed": 1.0,  # 1.0 = no time-stretch; librosa phase vocoder smears/echoes the voice
         "description": "Charlie Morningstar (Hazbin Hotel) -- Chatterbox clone + RVC erika",
     },
 }
