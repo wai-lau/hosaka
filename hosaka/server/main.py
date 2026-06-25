@@ -22,7 +22,9 @@ from hosaka.server.engines.rvc_engine import RvcEngine
 
 def _make_piper():
     """Build the Piper sidecar engine, or None if it isn't set up. Missing the
-    .venv-piper interpreter or every model file degrades gracefully."""
+    .venv-piper interpreter or every model file degrades gracefully: the server
+    still serves Kokoro + Chatterbox. Only voices whose model exists are loaded
+    and advertised."""
     available = {vid: spec for vid, spec in PIPER_VOICES.items() if spec["model"].exists()}
     if not PIPER_PYTHON.exists() or not available:
         return None

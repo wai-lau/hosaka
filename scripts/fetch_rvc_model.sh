@@ -13,8 +13,8 @@ HF="https://huggingface.co"
 mkdir -p "$ROOT"
 
 fetch() {  # url dest
-  if [ -f "$2" ]; then echo "have    ${2#$ROOT/}"; return; fi
-  echo "fetch   ${2#$ROOT/}"
+  if [ -f "$2" ]; then echo "have    ${2#"$ROOT"/}"; return; fi
+  echo "fetch   ${2#"$ROOT"/}"
   curl -fL "$1" -o "$2"
 }
 

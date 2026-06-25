@@ -51,6 +51,8 @@ def pack_end() -> bytes:
 def _read_exact(reader, n: int) -> bytes:
     chunks = []
     remaining = n
+    # A raw pipe read(n) may return fewer than n bytes; loop until we have all
+    # n or hit a true EOF (empty read).
     while remaining:
         b = reader.read(remaining)
         if not b:

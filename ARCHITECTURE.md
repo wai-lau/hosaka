@@ -67,7 +67,7 @@ Three deployable units, each with one clear responsibility:
 3. **Bake CLI** (`hosaka/cli/bake.py`) — offline, isolated venv; turns a text
    voice description into a clone-able seed WAV.
 
-## Three engines, one decision
+## Five engines, one decision
 
 No single open model does presets + cloning + tuning + style-prompt + character
 voices AND hits <1s on this card. So the work is split:
@@ -82,7 +82,8 @@ voices AND hits <1s on this card. So the work is split:
 
 Kokoro and Chatterbox stay pinned in VRAM (~5-6 GB of 16); Piper runs CPU-only
 (models in RAM) in an isolated sidecar, so it never competes for VRAM and could
-run concurrently with the GPU engines.
+run concurrently with the GPU engines. The RVC sidecar holds an additional
+~0.5-1 GB of VRAM in its own process when active.
 
 ### The bake-once idea
 
