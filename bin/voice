@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# hosaka voice REPL launcher. Works from any cwd.
+set -euo pipefail
+src="$(readlink -f "${BASH_SOURCE[0]}")"
+root="$(cd "$(dirname "$src")/.." && pwd)"
+exec env PYTHONPATH="$root" "$root/.venv-server/bin/python" -m hosaka.cli.repl "$@"
