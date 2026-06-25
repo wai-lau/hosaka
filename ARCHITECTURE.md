@@ -74,10 +74,10 @@ voices AND hits <1s on this card. So the work is split:
 
 | Engine | Role | Why | Latency on this box |
 |--------|------|-----|---------------------|
-| **Kokoro-82M** | presets + the realtime path | tiny, fast, ~28 English voices | ~60ms to first audio |
+| **Kokoro-82M** | the realtime path | tiny, fast (~28 English voices in the model; 1 curated as offered -- `nicole`) | ~60ms to first audio |
 | **Chatterbox** (original, `davidbrowne17/chatterbox-streaming`) | cloning + tuning | best open zero-shot clone, keeps `exaggeration`/`cfg_weight`/`temperature` | RTF ~0.8; ~4s to first audio (see below) |
 | **Piper** (VITS, CPU) | fixed character voices (GLaDOS) | pretrained single-speaker `.onnx` voices, non-autoregressive — runs off-GPU and beats realtime | RTF 0.04-0.2; ~40-80ms to first audio |
-| **RVC v2** (GPU sidecar) | converted character voices (Charlie) | retrieval-based voice conversion over a Kokoro neutral source; GPU but tiny (~0.5-1 GB VRAM) | warm RTF ~0.05; cold ~1.7s one-time |
+| **RVC v2** (GPU sidecar) | converted character voices (Charlie) | retrieval-based voice conversion; per-voice source engine -- Charlie sources from a Chatterbox clone (emotion) then RVC locks the timbre; GPU but tiny (~0.5-1 GB VRAM) | quality path, ~4-5s to first audio |
 | **Parler-TTS Mini** (offline) | style-prompt voice authoring | only model that designs a voice from words | irrelevant (offline) |
 
 Kokoro and Chatterbox stay pinned in VRAM (~5-6 GB of 16); Piper runs CPU-only
@@ -148,18 +148,21 @@ ONE held GPU slot:
    only timbre, so emotion has to come from the source. Kokoro is flat
    (realtime), so an expressive character instead sources from **Chatterbox
    cloning a real reference clip**: Charlie = a Chatterbox clone of `charlie_cb`
-   (exaggeration 0.7), which carries the emotion. A Kokoro-source voice still
+   (exaggeration 0.4, cfg_weight 0.5, temperature 0.3 -- the cb knobs), which
+   carries the emotion. A Kokoro-source voice still
    follows the match-the-character preset rule (`resolve_source`); a
    Chatterbox-clone source is a library voice id. (`sources` maps backend ->
    engine; each voice picks one via `source_backend`.)
 2. The full fragment PCM is piped to the `.venv-rvc` GPU sidecar
    (`rvc_sidecar.py`) over the `rvc_proto` wire (JSON header + length-prefixed
    float32).
-3. The sidecar runs: HuBERT/ContentVec encode → rmvpe F0 estimation (+transpose
-   if configured) → faiss index retrieval → net_g synthesis at the model's native
-   **32 kHz** (erika) → resample 32k→24k. RVC hallucinates phonemes in the
-   source's silent gaps, so when the voice sets `gate` the sidecar mutes the
-   output wherever the source was silent. Framed PCM goes back on the pipe.
+3. The sidecar runs (per the voice's config): N `passes` of HuBERT/ContentVec
+   encode → rmvpe F0 (+transpose on the first pass only) → faiss retrieval →
+   net_g synthesis at the model's native **32 kHz** (erika) → resample 32k→24k.
+   Then, because RVC hallucinates phonemes in the source's silent gaps, a `gate`
+   mutes the output wherever the source was silent; finally a per-voice `speed`
+   tempo-stretches the output (keeps pitch -- Chatterbox has no speed knob).
+   Framed PCM goes back on the pipe.
 4. `RvcEngine` yields the converted PCM frames.
 
 The source engine runs in the server process and RVC in the sidecar process, so

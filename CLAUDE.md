@@ -73,7 +73,9 @@ and tested in `.venv-dev` the same way.
   the source's prosody/delivery and swaps only timbre, so a flat source yields a
   flat character. Kokoro is flat (realtime), so an expressive character sources
   from **Chatterbox cloning a real reference clip**: Charlie = Chatterbox clone of
-  the `charlie_cb` library voice (exaggeration 0.7) -> RVC erika. A voice sets
+  the `charlie_cb` library voice (exaggeration 0.4 / cfg_weight 0.5 / temperature
+  0.3) -> RVC erika, plus per-voice `gate` + `passes` + `speed` (tempo stretch).
+  A voice sets
   `source_backend` (`kokoro`|`chatterbox`) + `source` (+ `source_params`); the
   `sources` dict (in `_make_rvc`) maps backend -> engine. Kokoro sources still
   follow match-the-character -- `resolve_source` validates the
@@ -88,9 +90,16 @@ and tested in `.venv-dev` the same way.
   print model-load messages to stdout, but the sidecar's stdout is the binary
   frame pipe. fd 1 is redirected to stderr before any imports so library chatter
   cannot corrupt the protocol. Do not remove this redirect.
-- **Charlie is native 40 kHz; the sidecar resamples to 24k.** Do not change the
-  model's synthesis sample rate. Adding an RVC character = drop model + index +
-  one `RVC_VOICES` entry in `config.py` (data-only, like Piper).
+- **Charlie's erika model is native 32 kHz; the sidecar resamples to 24k.** Do
+  not change the model's synthesis sample rate. Adding an RVC character = drop
+  model + index + one `RVC_VOICES` entry in `config.py` (data-only, like Piper).
+- **Offered voices are curated to three:** `nicole` (kokoro -- a display alias
+  for the `af_nicole` embedding via `KOKORO_ALIASES`; `KokoroEngine` maps it
+  before KPipeline), `glados` (piper), `charlie` (rvc hybrid). `/v1/voices`
+  carries a `cb` flag -- true when generation runs through Chatterbox (so the
+  exaggeration/cfg_weight/temperature knobs apply) -- and the REPL `:voices`
+  shows two columns: name + `cb`/`non-cb`. Library clips used only as an RVC
+  source (e.g. `charlie_cb`) are hidden from the listing.
 - **Audio:** install only `pulseaudio-utils` (client). NEVER `apt install
   pulseaudio` (the daemon) — it breaks WSLg audio. Never install Linux GPU
   drivers or `cuda`/`cuda-drivers` meta-packages inside WSL. WSLg's RDP bridge
