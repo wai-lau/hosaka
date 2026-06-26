@@ -72,12 +72,16 @@ def _spoken_time(hour: int, minute: int, meridiem: str | None) -> str:
 def _sub(m: re.Match) -> str:
     if m.group(1) is not None:  # with am/pm
         hour, minute, mer = int(m.group(1)), int(m.group(2)), m.group(3)
-        if not 1 <= hour <= 12:  # am/pm only valid on a 12h clock
-            return m.group(0)
+        # am/pm is only meaningful on a 12h clock. A 24h hour (13-23) with a
+        # stray meridiem is still a real time -- speak the 24h form and drop the
+        # redundant suffix. Never fall through to verbatim: that lets the raw
+        # digits reach the engine, which is the "thirteen thousand" bug itself.
+        if not 1 <= hour <= 12:
+            mer = None
     else:
         hour, minute, mer = int(m.group(4)), int(m.group(5)), None
-        if hour > 23:
-            return m.group(0)
+    if hour > 23:  # not a clock (e.g. 24:00, 99:00) -- leave verbatim
+        return m.group(0)
     return _spoken_time(hour, minute, mer)
 
 

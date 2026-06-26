@@ -14,6 +14,8 @@ from hosaka.normalize import normalize_times
         # 12-hour with meridiem (am/pm must survive).
         ("12:34pm", "twelve thirty-four PM"),
         ("11:30AM", "eleven thirty AM"),
+        # 24h hour + stray meridiem: speak 24h form, drop pm (never verbatim).
+        ("13:45pm", "thirteen forty-five"),
         ("9:05 p.m.", "nine oh five PM"),
         ("9:05am", "nine oh five AM"),
         # o'clock and oh-minute forms.
@@ -36,7 +38,6 @@ def test_spoken_times(raw, want):
         "24:00",  # hour out of range
         "13:99",  # minute out of range (no match)
         "plain text",
-        "13:45pm",  # 24h hour + meridiem is invalid -> verbatim
     ],
 )
 def test_non_times_untouched(raw):
