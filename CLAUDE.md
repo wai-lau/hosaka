@@ -177,3 +177,28 @@ commit**, so origin never lags the running/deployed code. (Overrides the default
 shuts down.
 `scripts/benchmark_latency.py` gates the Kokoro realtime path (<1s first chunk)
 and reports Chatterbox quality-mode timing.
+
+## Diagnosing audio gaps (measure, don't guess)
+
+Audible gaps are almost always **underrun** (the next fragment isn't generated
+when the current finishes playing), NOT seam/edge-silence padding. Prove the
+cause before touching code:
+
+1. Stream the voice over HTTP, timestamp every chunk, cluster chunks into
+   per-fragment bursts (a >150 ms arrival gap = the server generating the next
+   fragment), then simulate playback with the `PIPELINE_LEAD_MS` lead buffer to
+   locate where the buffer starves. This is the gap test.
+2. Compute **RTF** = generate-wall / audio-seconds. RTF > 1 means generation can
+   never keep up on a long utterance — a fixed lead buffer cannot fix it; only
+   stage-overlap or full-utterance pre-buffering can. The Charlie hybrid path
+   (Chatterbox source + RVC, serialized through one GPU slot) sits at RTF ~1.3
+   when healthy; ~1.7+ is GPU degradation — **restart the unit and re-measure**
+   before "fixing" anything (see the RTF-2.0 rule above).
+3. Sample `nvidia-smi` utilization during a generation: ~26% mean util = the
+   path is serialization/overhead-bound (autoregressive T3 + pipe handoffs +
+   CPU resample/ffmpeg), not compute-bound — idle headroom that stage-overlap
+   could fill.
+
+Punctuation only moves *where* seams land, never RTF. The chunker breaks on
+sentence-enders (`. ! ?`); a dash is a pause (real injected silence), not a
+break — see `chunking.split_fragments` / `DASH_PAUSE_MS`.
