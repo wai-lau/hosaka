@@ -162,6 +162,21 @@ ONE held GPU slot:
    params)` -- source-gen is ~89% of a request, so a repeat or a live `:speed` /
    RVC-knob re-tune (which don't enter the key) skips it: measured ~13x on a
    cached repeat. Editing one sentence replays the unchanged fragments from cache.
+
+   > **Planned (not yet implemented): disk persistence.** The `PcmCache` is
+   > in-memory today, cleared on restart. The design to persist it across
+   > restarts: make `PcmCache` two-tier -- the in-RAM LRU stays the hot layer,
+   > backed by on-disk blobs under `~/.local/share/hosaka/cache/source/`
+   > (`DATA_DIR`, untracked), one file per entry named `<sha256(key)>.f32` (raw
+   > float32 PCM). `get` checks RAM, then reads the disk blob into RAM, then
+   > misses; `put` writes RAM plus an atomic disk write (tmp + rename). Disk is
+   > bounded by `SOURCE_CACHE_MAX_BYTES`, evicted LRU by file mtime on each put;
+   > startup is lazy (no preload, first `get` reads disk). A `CACHE_VERSION`
+   > folded into the key hash invalidates cleanly when source-gen logic or the
+   > Chatterbox/voice weights change (the one real staleness risk -- bump it on a
+   > model swap). Caveat: temperature 0.3 is stochastic, so persisting freezes
+   > one realization permanently until a knob/version change -- consistent
+   > replays, but a fresh take then needs a knob nudge or a cache clear.
 2. The full fragment PCM is piped to the `.venv-rvc` GPU sidecar
    (`rvc_sidecar.py`) over the `rvc_proto` wire (JSON header + length-prefixed
    float32).
