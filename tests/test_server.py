@@ -469,6 +469,17 @@ def test_voices_rvc_cb_params(tmp_path):
     assert voices["charlie2"]["cb_params"] is None
 
 
+def test_voices_rvc_speed_default(tmp_path):
+    # A cb rvc voice ships its configured output speed so a client can preload it
+    # on :voice (:speed then tunes it live); voices not in RVC_VOICES default 1.0.
+    from hosaka.config import RVC_VOICES
+
+    client, _ = _client_with_rvc(tmp_path)
+    voices = {v["id"]: v for v in client.get("/v1/voices").json()}
+    assert voices["charlie"]["speed"] == RVC_VOICES["charlie"]["speed"]
+    assert voices["charlie2"]["speed"] == 1.0
+
+
 def test_voices_omit_rvc_when_unavailable(tmp_path):
     client, _ = _client(tmp_path)
     backends = {v["backend"] for v in client.get("/v1/voices").json()}

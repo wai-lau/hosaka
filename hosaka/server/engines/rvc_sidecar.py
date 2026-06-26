@@ -19,11 +19,11 @@ paths are passed here.
 
 import argparse
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-import librosa
 import numpy as np
 import soundfile as sf
 from scipy.signal import resample_poly
@@ -82,6 +82,41 @@ def _silence_gate(source, converted):
     return conv * mask
 
 
+def _time_stretch(wav, speed):
+    """Tempo change only (keeps pitch -- Chatterbox has no speed knob). Uses
+    ffmpeg's atempo (WSOLA), which is far cleaner on voice than a phase vocoder
+    (librosa.effects.time_stretch smeared/colored the sound -- chosen by A/B).
+    atempo spans 0.5-2.0 in a single pass, covering the speed knob's range.
+    Pipes raw float32 LE in and out; ffmpeg is already on the box, so the sidecar
+    needs no python time-stretch dependency."""
+    raw = np.ascontiguousarray(wav, dtype="<f4").tobytes()
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "f32le",
+            "-ar",
+            str(SAMPLE_RATE),
+            "-ac",
+            "1",
+            "-i",
+            "pipe:0",
+            "-af",
+            f"atempo={speed:.6f}",
+            "-f",
+            "f32le",
+            "pipe:1",
+        ],
+        input=raw,
+        stdout=subprocess.PIPE,
+        check=True,
+    )
+    return np.frombuffer(proc.stdout, dtype="<f4").astype(np.float32)
+
+
 def convert(rvc, req, out):
     """Convert one request's source PCM to the target and stream it back.
 
@@ -116,8 +151,7 @@ def convert(rvc, req, out):
         wav = _silence_gate(src, wav)  # src is the source PCM @ 24k, read above
     speed = float(req.get("speed", 1.0))
     if abs(speed - 1.0) > 1e-3:
-        # Tempo change only (keeps pitch) -- Chatterbox has no speed knob.
-        wav = librosa.effects.time_stretch(wav, rate=speed).astype(np.float32)
+        wav = _time_stretch(wav, speed)
     f32 = np.ascontiguousarray(wav, dtype="<f4")
     out.write(pack_audio(f32.tobytes()))
     out.flush()

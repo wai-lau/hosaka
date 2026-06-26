@@ -147,16 +147,17 @@ def _ensure_server() -> None:
 
 
 def _voice_meta(name, fallback):
-    """Resolve a voice's (backend, cb_params) from the registry; fall back on
-    miss. cb_params is the voice's tuned cb-knob defaults (or None), used to
-    preload the REPL knobs so they round-trip the character until tuned."""
+    """Resolve a voice's (backend, cb_params, speed) from the registry; fall back
+    on miss. cb_params is the voice's tuned cb-knob defaults (or None) and speed
+    its default output tempo (or None), both used to preload the REPL knobs so
+    they round-trip the character until tuned."""
     try:
         for v in httpx.get(f"{SERVER_URL}/v1/voices", timeout=2.0).json():
             if v["id"] == name:
-                return v["backend"], v.get("cb_params")
+                return v["backend"], v.get("cb_params"), v.get("speed")
     except Exception:
         pass
-    return fallback, None
+    return fallback, None, None
 
 
 def _speak(player, backend, voice, params, text):
@@ -223,7 +224,7 @@ def main():
                 elif a.kind == "voice":
                     name, text = a.value
                     voice = name
-                    backend, cb_params = _voice_meta(name, backend)
+                    backend, cb_params, vspeed = _voice_meta(name, backend)
                     # Preload the character's tuned cb-knob defaults so :status
                     # and the request reflect them; the user can still :exag etc.
                     if cb_params:
@@ -234,6 +235,10 @@ def main():
                             f"  loaded {voice} defaults: "
                             + ", ".join(f"{k}={float(v):.2f}" for k, v in cb_params.items())
                         )
+                    # Preload the voice's default output speed so :speed tunes it
+                    # live and round-trips the character until the user changes it.
+                    if vspeed is not None:
+                        params["speed"] = float(vspeed)
                     if text:
                         _speak(player, backend, voice, params, text)
                 elif a.kind == "clone":

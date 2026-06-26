@@ -164,12 +164,12 @@ ONE held GPU slot:
    encode → rmvpe F0 (+transpose on the first pass only) → faiss retrieval →
    net_g synthesis at the model's native **32 kHz** (erika) → resample 32k→24k.
    Then, because RVC hallucinates phonemes in the source's silent gaps, a `gate`
-   mutes the output wherever the source was silent; finally a per-voice `speed`
-   (when != 1.0) tempo-stretches the output (keeps pitch -- Chatterbox has no
-   speed knob). The stretch is `librosa.effects.time_stretch` (phase vocoder);
-   Charlie ships at `speed` 1.1 because the stretch also masks a faint echo in
-   the base RVC output -- 1.0 (no stretch) brings that echo back, so do not
-   "revert" it. Framed PCM goes back on the pipe.
+   mutes the output wherever the source was silent; finally a `speed` (when !=
+   1.0) tempo-stretches the output (keeps pitch -- Chatterbox has no speed knob)
+   via ffmpeg `atempo` (WSOLA; librosa's phase vocoder colored/smeared the voice,
+   swapped out by A/B). `speed` is request-overridable: the request value wins
+   over the voice's configured default (the REPL preloads that default on
+   `:voice`, so `:speed` tunes it live). Framed PCM goes back on the pipe.
 4. `RvcEngine` yields the converted PCM frames.
 
 The source engine runs in the server process and RVC in the sidecar process, so

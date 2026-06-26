@@ -99,7 +99,10 @@ class RvcEngine:
             rms_mix_rate=float(self._knobs["rms_mix_rate"]),
             passes=int(cfg.get("passes", 1)),
             gate=bool(cfg.get("gate", False)),
-            speed=float(cfg.get("speed", 1.0)),
+            # The request's speed overrides the voice's configured default (the
+            # REPL preloads that default on :voice, so :speed tunes it live). For
+            # RVC, speed is the output tempo stretch -- it never reaches the source.
+            speed=float(params.get("speed", cfg.get("speed", 1.0))),
         )
         proc = self._ensure_proc()
         try:

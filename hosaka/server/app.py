@@ -276,6 +276,7 @@ def create_app(
                         if RVC_VOICES.get(vid, {}).get("source_backend") == "chatterbox"
                         else None
                     ),
+                    speed=RVC_VOICES.get(vid, {}).get("speed", 1.0),
                 ).model_dump()
                 for vid in registry.rvc.voice_ids
             ]

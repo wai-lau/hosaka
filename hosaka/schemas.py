@@ -28,6 +28,10 @@ class VoiceInfo(BaseModel):
     # these on :voice so the knobs round-trip the character's defaults until the
     # user tunes them. None for voices with no fixed source params.
     cb_params: dict | None = None
+    # The voice's default output speed (RVC tempo stretch). A client preloads it
+    # on :voice so :speed round-trips the character's default until tuned. None
+    # for voices with no fixed speed (request speed applies directly).
+    speed: float | None = None
 
 
 def _clamp(x, lo, hi):

@@ -100,8 +100,9 @@ def test_chatterbox_source_merges_request_cb_knobs():
 
 def test_stream_sends_transpose_and_knobs_to_sidecar():
     eng = _engine()
+    # No request speed -> the voice's configured default (1.1) reaches the sidecar.
     with pytest.raises(RvcSidecarError) as exc:
-        list(eng.stream("Hi.", "echo", {"speed": 1.0}))
+        list(eng.stream("Hi.", "echo", {}))
     params = json.loads(str(exc.value))
     assert params["voice"] == "echo"
     assert params["transpose"] == 7
@@ -110,6 +111,17 @@ def test_stream_sends_transpose_and_knobs_to_sidecar():
     assert params["passes"] == 2
     assert params["gate"] is True
     assert params["speed"] == 1.1
+    eng.close()
+
+
+def test_request_speed_overrides_config_default():
+    # A request speed wins over the voice's configured speed (the REPL preloads
+    # that default, so :speed tunes the output stretch live).
+    eng = _engine()
+    with pytest.raises(RvcSidecarError) as exc:
+        list(eng.stream("Hi.", "echo", {"speed": 1.5}))
+    params = json.loads(str(exc.value))
+    assert params["speed"] == 1.5
     eng.close()
 
 
