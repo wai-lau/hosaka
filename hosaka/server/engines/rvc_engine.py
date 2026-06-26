@@ -4,7 +4,6 @@ import subprocess
 import numpy as np
 
 from hosaka.cache import PcmCache
-from hosaka.config import SOURCE_CACHE_MAX_BYTES
 from hosaka.server.engines.rvc_proto import (
     RvcProtocolError,
     RvcSidecarError,
@@ -38,7 +37,7 @@ class RvcEngine:
         knobs,
         cwd=None,
         stderr=None,
-        cache_max_bytes=SOURCE_CACHE_MAX_BYTES,
+        source_cache=None,
     ):
         # sources: {backend -> Engine} (e.g. {"kokoro": ..., "chatterbox": ...}).
         # Each RVC voice picks which engine generates its source audio.
@@ -51,8 +50,9 @@ class RvcEngine:
         self._stderr = stderr
         self._proc = None
         # Cache the expensive source-gen (the 89% stage) so live :speed / RVC-knob
-        # re-tunes -- which don't change the source -- skip it (see PcmCache).
-        self._src_cache = PcmCache(cache_max_bytes)
+        # re-tunes -- which don't change the source -- skip it. Injected by the
+        # server (a disk-backed SourceCache); None disables caching (PcmCache(0)).
+        self._src_cache = source_cache if source_cache is not None else PcmCache(0)
         atexit.register(self.close)
 
     def _ensure_proc(self) -> subprocess.Popen:

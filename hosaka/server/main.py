@@ -1,3 +1,4 @@
+from hosaka.cache import SourceCache
 from hosaka.config import (
     PIPER_PYTHON,
     PIPER_SIDECAR,
@@ -8,6 +9,10 @@ from hosaka.config import (
     RVC_RMVPE,
     RVC_SIDECAR,
     RVC_VOICES,
+    SOURCE_CACHE_DIR,
+    SOURCE_CACHE_DISK_BYTES,
+    SOURCE_CACHE_RAM_BYTES,
+    SOURCE_CACHE_VERSION,
     VOICE_DIR,
     resolve_source,
 )
@@ -65,7 +70,13 @@ def _make_rvc(sources):
             "gate": spec.get("gate", False),
             "speed": spec.get("speed", 1.0),
         }
-    return RvcEngine(sources, cmd, voices=voices, knobs=dict(RVC_KNOBS))
+    cache = SourceCache(
+        SOURCE_CACHE_DIR,
+        SOURCE_CACHE_RAM_BYTES,
+        SOURCE_CACHE_DISK_BYTES,
+        SOURCE_CACHE_VERSION,
+    )
+    return RvcEngine(sources, cmd, voices=voices, knobs=dict(RVC_KNOBS), source_cache=cache)
 
 
 _library = VoiceLibrary(VOICE_DIR)

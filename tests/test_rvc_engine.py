@@ -5,8 +5,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from hosaka.cache import SourceCache
 from hosaka.server.engines.rvc_engine import RvcEngine
 from hosaka.server.engines.rvc_proto import RvcProtocolError, RvcSidecarError
+
+
+def _ram_cache():
+    """RAM-only source cache (no disk) for cache-behavior tests."""
+    return SourceCache(None, 10_000_000, 0)
+
 
 FAKE = [sys.executable, str(Path(__file__).parent / "fake_rvc_sidecar.py")]
 
@@ -103,7 +110,9 @@ def test_source_pcm_cached_when_only_downstream_speed_changes():
     # source-gen knob -- so an identical fragment with only :speed changed reuses
     # the cached source instead of re-generating it (the 89% win).
     cb = FakeSource()
-    eng = RvcEngine({"chatterbox": cb}, FAKE, voices=_voices(), knobs=dict(KNOBS))
+    eng = RvcEngine(
+        {"chatterbox": cb}, FAKE, voices=_voices(), knobs=dict(KNOBS), source_cache=_ram_cache()
+    )
     list(eng.stream("Hi.", "cbvoice", {"speed": 1.0}))
     list(eng.stream("Hi.", "cbvoice", {"speed": 1.5}))  # speed is downstream
     assert len(cb.calls) == 1  # source generated only once
@@ -113,7 +122,9 @@ def test_source_pcm_cached_when_only_downstream_speed_changes():
 def test_source_cache_keys_on_cb_knobs():
     # Changing a cb knob (which DOES change the source) is a cache miss -> re-gen.
     cb = FakeSource()
-    eng = RvcEngine({"chatterbox": cb}, FAKE, voices=_voices(), knobs=dict(KNOBS))
+    eng = RvcEngine(
+        {"chatterbox": cb}, FAKE, voices=_voices(), knobs=dict(KNOBS), source_cache=_ram_cache()
+    )
     list(eng.stream("Hi.", "cbvoice", {"exaggeration": 0.2}))
     list(eng.stream("Hi.", "cbvoice", {"exaggeration": 0.9}))
     assert len(cb.calls) == 2  # different source params -> two gens
@@ -121,8 +132,9 @@ def test_source_cache_keys_on_cb_knobs():
 
 
 def test_source_cache_disabled_regenerates():
+    # No cache injected (None) -> caching off, source runs every call.
     src = FakeSource()
-    eng = RvcEngine({"kokoro": src}, FAKE, voices=_voices(), knobs=dict(KNOBS), cache_max_bytes=0)
+    eng = RvcEngine({"kokoro": src}, FAKE, voices=_voices(), knobs=dict(KNOBS), source_cache=None)
     list(eng.stream("Hi.", "charlie", {"speed": 1.0}))
     list(eng.stream("Hi.", "charlie", {"speed": 1.0}))
     assert len(src.calls) == 2  # cache off -> source each time

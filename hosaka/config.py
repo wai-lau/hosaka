@@ -69,14 +69,6 @@ FIRST_FRAGMENT_MAX_CHARS = 64
 FRAGMENT_GROWTH = 1.1
 CHATTERBOX_MAX_CHARS = 280  # hard per-fragment cap (token-limit safety)
 
-# Source-PCM cache (RvcEngine): the Chatterbox source-gen is ~89% of a Charlie
-# request, so caching it by (voice, fragment text, cb knobs) makes live :speed /
-# RVC-knob re-tunes -- which don't change the source -- instant instead of a full
-# re-gen, and editing one sentence replays the unchanged fragments. In-memory,
-# LRU by total bytes, cleared on restart. ~384 KB per audio-second, so 256 MB is
-# ~11 min of cached source. Set 0 to disable.
-SOURCE_CACHE_MAX_BYTES = 256 * 1024 * 1024
-
 # A dash (-- , --- , em/en dash) is a deliberate pause, not a word hyphen. The
 # chunker splits the text there into separate spoken fragments and the server
 # injects this much real silence between them (scaled up for longer dash runs:
@@ -118,6 +110,20 @@ LLM_MODEL = "gpt-oss:20b"  # stopped on server start to free VRAM
 DATA_DIR = Path.home() / ".local" / "share" / "hosaka"  # untracked personal data
 VOICE_DIR = DATA_DIR / "voices"
 MANIFEST_PATH = VOICE_DIR / "manifest.json"
+
+# Source-PCM cache (RvcEngine): the Chatterbox source-gen is ~89% of a Charlie
+# request, so caching it by (source, fragment text, backend, cb knobs) makes live
+# :speed / RVC-knob re-tunes -- which don't change the source -- instant instead
+# of a full re-gen, and editing one sentence replays the unchanged fragments.
+# Two-tier (hosaka/cache.py SourceCache): a small in-RAM LRU hot tier backed by
+# durable on-disk blobs under SOURCE_CACHE_DIR, so it survives restarts. ~384 KB
+# per audio-second, so 3 GB on disk is ~2 hours of cached source; the RAM tier
+# stays small so the process doesn't balloon. Bump SOURCE_CACHE_VERSION when
+# source-gen logic or the Chatterbox/voice weights change, to invalidate cleanly.
+SOURCE_CACHE_DIR = DATA_DIR / "cache" / "source"  # untracked
+SOURCE_CACHE_RAM_BYTES = 512 * 1024 * 1024  # hot tier, in process memory
+SOURCE_CACHE_DISK_BYTES = 3 * 1024 * 1024 * 1024  # 3 GB durable on disk
+SOURCE_CACHE_VERSION = "1"
 # Custom-pronunciation map ({word: respelling}); applied to input before
 # chunking on every path into the engines. See hosaka/lexicon.py.
 LEXICON_PATH = DATA_DIR / "lexicon.json"
