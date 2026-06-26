@@ -211,11 +211,11 @@ The Charlie path is RTF ~1.1–1.3 healthy. Two "obvious" ways to reclaim the
   Overlapping the two GPU stages hides only the 11% (ideal RTF 0.96 vs 1.08).
   Not worth destabilizing the `Semaphore(1)` + watchdog.
 - **Two concurrent Chatterbox workers: actively worse.** Spike (two model
-  instances, parallel `generate()`): **0.75x** — concurrent ran 33% *slower*
-  than sequential. The idle is latency bubbles *between* tiny dependent
-  autoregressive T3 kernels, not free compute; a second CUDA stream contends for
-  SMs/bandwidth instead of filling them. `nvidia-smi` util% is NOT exploitable
-  headroom for autoregressive decode.
+  instances, parallel `generate()`), measured twice: **0.75x and 0.90x** —
+  concurrent always ran *slower* than sequential. The idle is latency bubbles
+  *between* tiny dependent autoregressive T3 kernels, not free compute; a second
+  CUDA stream contends for SMs/bandwidth instead of filling them. `nvidia-smi`
+  util% is NOT exploitable headroom for autoregressive decode.
 
 The only lever that could widen each kernel (rather than add a contending stream)
 is **batching multiple fragments into one `generate()`** — unverified, needs a
