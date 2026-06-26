@@ -25,6 +25,7 @@ from hosaka.config import (
 )
 from hosaka.lexicon import Lexicon
 from hosaka.library import VoiceLibrary
+from hosaka.normalize import normalize_times
 from hosaka.schemas import SpeechRequest, VoiceInfo, clamp_params
 from hosaka.server.engines.base import EngineRegistry
 
@@ -317,7 +318,7 @@ def create_app(
 
         await _admit_or(busy)
         params = clamp_params(req.params).model_dump()
-        fragments = _fragments_for(req.backend, lexicon.apply(req.input))
+        fragments = _fragments_for(req.backend, lexicon.apply(normalize_times(req.input)))
         return StreamingResponse(
             _pcm_frames(engine, req.voice, params, fragments, gpu_queue),
             media_type="application/octet-stream",
@@ -354,7 +355,7 @@ def create_app(
                 if not await _admit_or(busy):
                     continue
                 params = clamp_params(req.params).model_dump()
-                fragments = _fragments_for(req.backend, lexicon.apply(req.input))
+                fragments = _fragments_for(req.backend, lexicon.apply(normalize_times(req.input)))
                 await ws.send_json({"type": "start"})
                 async for chunk in _pcm_frames(engine, req.voice, params, fragments, gpu_queue):
                     await ws.send_bytes(chunk)

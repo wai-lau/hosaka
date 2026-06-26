@@ -232,7 +232,9 @@ other engines unchanged.
    reserve are atomic (no `await` between them), so they can't both slip past a
    full queue. Only when the queue is full (depth `MAX_QUEUE`) does a request get
    `503`.
-3. Apply the custom-pronunciation lexicon (`hosaka/lexicon.py`), then split
+3. Normalize clock times (`hosaka/normalize.py` — `HH:MM`/am-pm → words, so
+   Chatterbox stops reading `13:45` as "thirteen thousand"), apply the
+   custom-pronunciation lexicon (`hosaka/lexicon.py`), then split
    `input` into fragments (`hosaka/chunking.py`). For the Chatterbox path the
    cap **ramps** — fragment `k` is capped at `min(CHATTERBOX_MAX_CHARS,
    ceil(FIRST_FRAGMENT_MAX_CHARS * FRAGMENT_GROWTH**k))` — so the first fragment
@@ -366,6 +368,7 @@ recipes.
 |------|----------------|
 | `hosaka/config.py` | constants: sample rate, ports, paths, defaults |
 | `hosaka/chunking.py` | sentence-fragment splitter (low-latency lever) |
+| `hosaka/normalize.py` | clock-time -> words pre-chunk pass (engine-agnostic) |
 | `hosaka/lexicon.py` | custom-pronunciation respelling map (applied pre-chunk) |
 | `hosaka/library.py` | voice library + JSON manifest |
 | `hosaka/schemas.py` | request/response models, param clamping |
