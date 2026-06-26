@@ -56,7 +56,11 @@
   <body>
     <main>
       <h1>HOSAKA</h1>
-      <textarea id="text" placeholder="Type something to speak...">Hello from the web.</textarea>
+      <textarea id="text" placeholder="Type something to speak...">So, there's a project that I've been working on that I really want to talk to you about---
+
+It's called Hosaka! I know the name sounds like a Japanese computer brand from Neuromancer, and--- Well, it is!
+
+Okay, full honesty, setting it up is a teeeeeny-tiny-little bit temperamental. You have to install everything in just the right order or it gets all manic; It doesn't find the graphics card and the whole thing screams at you and you're up all night and — then the next day you're trying to sell this piece of junk to some strangers on the internet!- Uh, I mean, friends! I mean friends!</textarea>
 
       <div class="row">
         <select id="voice"><option>loading voices...</option></select>
@@ -67,13 +71,13 @@
         <div class="group-label">clone knobs (chatterbox)</div>
         <div class="knobs">
           <label class="knob"><span class="kname">exaggeration</span>
-            <input type="range" id="exaggeration" min="0" max="2" step="0.05" value="0.5" />
+            <input type="range" id="exaggeration" min="0" max="2" step="0.05" value="0.65" />
             <span class="kval" id="exaggeration-val"></span></label>
           <label class="knob"><span class="kname">cfg_weight</span>
-            <input type="range" id="cfg_weight" min="0" max="1" step="0.05" value="0.4" />
+            <input type="range" id="cfg_weight" min="0" max="1" step="0.05" value="0.6" />
             <span class="kval" id="cfg_weight-val"></span></label>
           <label class="knob"><span class="kname">temperature</span>
-            <input type="range" id="temperature" min="0.1" max="2" step="0.05" value="0.8" />
+            <input type="range" id="temperature" min="0.1" max="2" step="0.05" value="0.2" />
             <span class="kval" id="temperature-val"></span></label>
         </div>
       </div>
@@ -81,7 +85,7 @@
       <div class="group-label">playback</div>
       <div class="knobs">
         <label class="knob"><span class="kname">speed</span>
-          <input type="range" id="speed" min="0.5" max="2" step="0.05" value="1.0" />
+          <input type="range" id="speed" min="0.5" max="2" step="0.05" value="1.3" />
           <span class="kval" id="speed-val"></span></label>
         <label class="knob"><span class="kname">volume</span>
           <input type="range" id="volume" min="0" max="5" step="0.1" value="1.0" />
