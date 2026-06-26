@@ -156,7 +156,12 @@ ONE held GPU slot:
    character until the user tunes one). A Kokoro-source voice still
    follows the match-the-character preset rule (`resolve_source`); a
    Chatterbox-clone source is a library voice id. (`sources` maps backend ->
-   engine; each voice picks one via `source_backend`.)
+   engine; each voice picks one via `source_backend`.) The source PCM is
+   **cached** (`hosaka/cache.py`, `PcmCache`, bounded LRU by bytes,
+   `SOURCE_CACHE_MAX_BYTES`) keyed on `(source, fragment text, backend, source
+   params)` -- source-gen is ~89% of a request, so a repeat or a live `:speed` /
+   RVC-knob re-tune (which don't enter the key) skips it: measured ~13x on a
+   cached repeat. Editing one sentence replays the unchanged fragments from cache.
 2. The full fragment PCM is piped to the `.venv-rvc` GPU sidecar
    (`rvc_sidecar.py`) over the `rvc_proto` wire (JSON header + length-prefixed
    float32).

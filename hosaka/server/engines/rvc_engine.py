@@ -3,6 +3,8 @@ import subprocess
 
 import numpy as np
 
+from hosaka.cache import PcmCache
+from hosaka.config import SOURCE_CACHE_MAX_BYTES
 from hosaka.server.engines.rvc_proto import (
     RvcProtocolError,
     RvcSidecarError,
@@ -36,6 +38,7 @@ class RvcEngine:
         knobs,
         cwd=None,
         stderr=None,
+        cache_max_bytes=SOURCE_CACHE_MAX_BYTES,
     ):
         # sources: {backend -> Engine} (e.g. {"kokoro": ..., "chatterbox": ...}).
         # Each RVC voice picks which engine generates its source audio.
@@ -47,6 +50,9 @@ class RvcEngine:
         self._cwd = cwd
         self._stderr = stderr
         self._proc = None
+        # Cache the expensive source-gen (the 89% stage) so live :speed / RVC-knob
+        # re-tunes -- which don't change the source -- skip it (see PcmCache).
+        self._src_cache = PcmCache(cache_max_bytes)
         atexit.register(self.close)
 
     def _ensure_proc(self) -> subprocess.Popen:
@@ -80,11 +86,19 @@ class RvcEngine:
         else:
             # Kokoro source: a pinned source_params wins, else pass the request speed.
             src_params = cfg.get("source_params") or {"speed": float(params.get("speed", 1.0))}
+        # Key only on what changes the source PCM: the source preset + its params.
+        # Speed / RVC knobs are applied downstream, so a re-tune hits this cache.
+        key = (cfg["source"], text, backend, tuple(sorted(src_params.items())))
+        cached = self._src_cache.get(key)
+        if cached is not None:
+            return cached
         chunks = list(engine.stream(text, cfg["source"], src_params))
         if not chunks:
             return b""
         arr = np.concatenate([np.asarray(c, dtype=np.float32).reshape(-1) for c in chunks])
-        return np.ascontiguousarray(arr, dtype="<f4").tobytes()
+        out = np.ascontiguousarray(arr, dtype="<f4").tobytes()
+        self._src_cache.put(key, out)
+        return out
 
     def stream(self, text, voice, params):
         cfg = self._voices[voice]

@@ -98,6 +98,37 @@ def test_chatterbox_source_merges_request_cb_knobs():
     eng.close()
 
 
+def test_source_pcm_cached_when_only_downstream_speed_changes():
+    # For a chatterbox source, speed is the RVC output stretch (downstream), not a
+    # source-gen knob -- so an identical fragment with only :speed changed reuses
+    # the cached source instead of re-generating it (the 89% win).
+    cb = FakeSource()
+    eng = RvcEngine({"chatterbox": cb}, FAKE, voices=_voices(), knobs=dict(KNOBS))
+    list(eng.stream("Hi.", "cbvoice", {"speed": 1.0}))
+    list(eng.stream("Hi.", "cbvoice", {"speed": 1.5}))  # speed is downstream
+    assert len(cb.calls) == 1  # source generated only once
+    eng.close()
+
+
+def test_source_cache_keys_on_cb_knobs():
+    # Changing a cb knob (which DOES change the source) is a cache miss -> re-gen.
+    cb = FakeSource()
+    eng = RvcEngine({"chatterbox": cb}, FAKE, voices=_voices(), knobs=dict(KNOBS))
+    list(eng.stream("Hi.", "cbvoice", {"exaggeration": 0.2}))
+    list(eng.stream("Hi.", "cbvoice", {"exaggeration": 0.9}))
+    assert len(cb.calls) == 2  # different source params -> two gens
+    eng.close()
+
+
+def test_source_cache_disabled_regenerates():
+    src = FakeSource()
+    eng = RvcEngine({"kokoro": src}, FAKE, voices=_voices(), knobs=dict(KNOBS), cache_max_bytes=0)
+    list(eng.stream("Hi.", "charlie", {"speed": 1.0}))
+    list(eng.stream("Hi.", "charlie", {"speed": 1.0}))
+    assert len(src.calls) == 2  # cache off -> source each time
+    eng.close()
+
+
 def test_stream_sends_transpose_and_knobs_to_sidecar():
     eng = _engine()
     # No request speed -> the voice's configured default (1.1) reaches the sidecar.

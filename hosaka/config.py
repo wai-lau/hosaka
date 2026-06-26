@@ -69,6 +69,14 @@ FIRST_FRAGMENT_MAX_CHARS = 64
 FRAGMENT_GROWTH = 1.1
 CHATTERBOX_MAX_CHARS = 280  # hard per-fragment cap (token-limit safety)
 
+# Source-PCM cache (RvcEngine): the Chatterbox source-gen is ~89% of a Charlie
+# request, so caching it by (voice, fragment text, cb knobs) makes live :speed /
+# RVC-knob re-tunes -- which don't change the source -- instant instead of a full
+# re-gen, and editing one sentence replays the unchanged fragments. In-memory,
+# LRU by total bytes, cleared on restart. ~384 KB per audio-second, so 256 MB is
+# ~11 min of cached source. Set 0 to disable.
+SOURCE_CACHE_MAX_BYTES = 256 * 1024 * 1024
+
 # A dash (-- , --- , em/en dash) is a deliberate pause, not a word hyphen. The
 # chunker splits the text there into separate spoken fragments and the server
 # injects this much real silence between them (scaled up for longer dash runs:
