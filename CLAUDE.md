@@ -217,8 +217,26 @@ The Charlie path is RTF ~1.1–1.3 healthy. Two "obvious" ways to reclaim the
   CUDA stream contends for SMs/bandwidth instead of filling them. `nvidia-smi`
   util% is NOT exploitable headroom for autoregressive decode.
 
-The only lever that could widen each kernel (rather than add a contending stream)
-is **batching multiple fragments into one `generate()`** — unverified, needs a
-chatterbox-streaming batched-decode spike. Otherwise treat RTF ~1.1 as the floor
-and make playback gapless by **pre-buffering** (length-proportional lead or whole
-utterance), not by chasing throughput. Injected dash pauses also add free buffer.
+- **torch.compile on T3: slower.** Spike (`torch.compile(m.t3, ...)`,
+  reduce-overhead and default, dynamic=True): **0.88x** both. The autoregressive
+  sampling loop + growing KV cache force graph breaks; compile/dynamic machinery
+  adds net cost. Don't retry compile on the whole T3 module.
+
+Structural why (from the spike): `t3.tfmr` is an HF `LlamaModel` forced onto
+**manual (eager) attention** because Chatterbox requests `output_attentions=True`
+for its alignment hook (the same hook that pins transformers to 4.46.3). So every
+T3 step runs slow attention, and `cfg_weight` makes it **two** forward passes per
+step (cond + uncond). Those are the real costs — not anything parallelism or
+compile can touch.
+
+Levers not yet tried (each a quality/risk tradeoff, needs its own spike):
+- **Lower/disable `cfg_weight`** — skips the uncond pass (~2x decode), but
+  changes voice adherence/emotion; A/B before shipping.
+- **Batch fragments into one `generate()`** — widens each kernel instead of
+  adding a contending stream; unverified chatterbox-streaming support.
+- **Cap T3 max decode tokens** (samples up to 1000/fragment) if it over-generates.
+
+Otherwise treat RTF ~1.1 as the floor and make playback gapless by
+**pre-buffering** (length-proportional lead or whole utterance), not by chasing
+throughput. Injected dash pauses also add free buffer. The banked win is Charlie
+`speed` 1.1 (gapless), not a throughput gain.
