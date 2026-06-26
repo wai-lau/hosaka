@@ -166,10 +166,10 @@ ONE held GPU slot:
    Then, because RVC hallucinates phonemes in the source's silent gaps, a `gate`
    mutes the output wherever the source was silent; finally a per-voice `speed`
    (when != 1.0) tempo-stretches the output (keeps pitch -- Chatterbox has no
-   speed knob). The stretch is `librosa.effects.time_stretch` (phase vocoder),
-   which smears/echoes the voice, so Charlie ships at `speed` 1.0 (no stretch);
-   only raise it if the tempo gain is worth the artifact. Framed PCM goes back
-   on the pipe.
+   speed knob). The stretch is `librosa.effects.time_stretch` (phase vocoder);
+   Charlie ships at `speed` 1.1 because the stretch also masks a faint echo in
+   the base RVC output -- 1.0 (no stretch) brings that echo back, so do not
+   "revert" it. Framed PCM goes back on the pipe.
 4. `RvcEngine` yields the converted PCM frames.
 
 The source engine runs in the server process and RVC in the sidecar process, so

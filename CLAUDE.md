@@ -75,7 +75,8 @@ and tested in `.venv-dev` the same way.
   from **Chatterbox cloning a real reference clip**: Charlie = Chatterbox clone of
   the `charlie_cb` library voice (exaggeration 0.4 / cfg_weight 0.5 / temperature
   0.3) -> RVC erika, plus per-voice `gate` + `passes` + `speed` (tempo stretch,
-  phase-vocoder -- echoes/smears the voice, so Charlie ships `speed` 1.0 = off).
+  phase-vocoder; Charlie ships `speed` 1.1 because the stretch masks a faint
+  echo in the base RVC output -- do NOT set 1.0, it brings the echo back).
   A voice sets
   `source_backend` (`kokoro`|`chatterbox`) + `source` (+ `source_params`); the
   `sources` dict (in `_make_rvc`) maps backend -> engine. The `source_params` cb
