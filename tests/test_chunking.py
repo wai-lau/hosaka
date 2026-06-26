@@ -1,4 +1,5 @@
-from hosaka.chunking import split_fragments
+from hosaka.chunking import pause_ms, split_fragments
+from hosaka.config import DASH_PAUSE_MS
 
 
 def test_single_short_sentence_is_one_fragment():
@@ -23,12 +24,43 @@ def test_empty_text_returns_empty_list():
     assert split_fragments("   ") == []
 
 
-def test_em_dash_becomes_a_pause():
-    # -- / em-dash / en-dash are not pauses to the model; normalize to a comma.
+def test_dash_splits_into_fragments_with_a_pause_sentinel():
+    # -- / --- / em-dash / en-dash are deliberate pauses: split the text there
+    # into separate spoken fragments with a pause sentinel between them. The dash
+    # is never spoken and no raw dash leaks into a spoken fragment.
     for dash in ("Wait -- no.", "Wait--no.", "Wait — no.", "Wait – no."):
-        out = " ".join(split_fragments(dash))
-        assert "--" not in out and "—" not in out and "–" not in out
-        assert "Wait, no." in out
+        out = split_fragments(dash)
+        spoken = [f for f in out if pause_ms(f) is None]
+        marks = [pause_ms(f) for f in out if pause_ms(f) is not None]
+        assert spoken == ["Wait", "no."]
+        assert len(marks) == 1 and marks[0] == DASH_PAUSE_MS
+        joined = " ".join(spoken)
+        assert "--" not in joined and "—" not in joined and "–" not in joined
+
+
+def test_longer_dash_runs_pause_longer():
+    one = [pause_ms(f) for f in split_fragments("a -- b.") if pause_ms(f)]
+    two = [pause_ms(f) for f in split_fragments("a --- b.") if pause_ms(f)]
+    three = [pause_ms(f) for f in split_fragments("a ----- b.") if pause_ms(f)]
+    assert one == [DASH_PAUSE_MS]
+    assert two == [2 * DASH_PAUSE_MS]
+    assert three == [3 * DASH_PAUSE_MS]  # capped at 3x
+
+
+def test_leading_and_trailing_dashes_emit_no_pause():
+    # A dash with nothing spoken on one side is not a pause between fragments.
+    assert split_fragments("--- Hello there.") == ["Hello there."]
+    assert split_fragments("Hello there.---") == ["Hello there."]
+
+
+def test_pause_does_not_reset_the_ramp():
+    # The ramp cap keeps growing across a dash pause (fragments after the pause
+    # are not re-shrunk to the small first-fragment cap).
+    body = "word " * 60
+    out = split_fragments(f"{body}--- {body}", first_max_chars=64, growth=1.1)
+    spoken = [f for f in out if pause_ms(f) is None]
+    assert max(len(f) for f in spoken) > len(spoken[0])
+    assert any(pause_ms(f) == 2 * DASH_PAUSE_MS for f in out)
 
 
 def test_word_hyphen_is_left_alone():

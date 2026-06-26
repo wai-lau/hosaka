@@ -69,6 +69,12 @@ FIRST_FRAGMENT_MAX_CHARS = 64
 FRAGMENT_GROWTH = 1.1
 CHATTERBOX_MAX_CHARS = 280  # hard per-fragment cap (token-limit safety)
 
+# A dash (-- , --- , em/en dash) is a deliberate pause, not a word hyphen. The
+# chunker splits the text there into separate spoken fragments and the server
+# injects this much real silence between them (scaled up for longer dash runs:
+# --- is 2x, ----+ is 3x). Tune the beat here.
+DASH_PAUSE_MS = 300
+
 # REPL knobs are entered on a uniform 0-100 scale. 50 is the DEFAULT (neutral)
 # value for each knob, 0 and 100 the extremes -- so the map is piecewise linear,
 # anchored at the default rather than the range midpoint. (min, default, max);

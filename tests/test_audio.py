@@ -4,7 +4,11 @@ import wave
 import numpy as np
 
 import hosaka.audio as audio
-from hosaka.audio import FfplayPlayer, PacatPlayer, WinSoundPlayer
+from hosaka.audio import (
+    FfplayPlayer,
+    PacatPlayer,
+    WinSoundPlayer,
+)
 
 
 def test_player_writes_bytes_to_subprocess(tmp_path):

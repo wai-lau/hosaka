@@ -218,9 +218,15 @@ other engines unchanged.
    is small (fast first audio) and each later one stays inside the gapless budget
    at RTF ~0.8. This fragment-size schedule, not any model "streaming" flag, is
    the real low-latency lever. Kokoro keeps the plain sentence split (it streams
-   sub-fragment audio itself).
-4. For each fragment: run the blocking `engine.stream()` in a worker thread
-   (`run_in_executor`), pushing PCM bytes (or an exception) into an
+   sub-fragment audio itself). A **dash** (`--`, `---`, em/en) is split out as a
+   deliberate pause: the chunker emits a pause sentinel (`chunking.pause_ms`)
+   between the spoken fragments instead of a comma, and step 4 renders it as real
+   silence (`DASH_PAUSE_MS`, scaled 2x for `---`, 3x for `----+`) without calling
+   an engine — so the dash is never spoken and RVC can't hallucinate into it. The
+   ramp continues across a pause (it does not reset the cap).
+4. For each fragment: if it is a pause sentinel, yield `DASH_PAUSE_MS` of float32
+   zeros and move on; otherwise run the blocking `engine.stream()` in a worker
+   thread (`run_in_executor`), pushing PCM bytes (or an exception) into an
    `asyncio.Queue`; an async generator drains the queue into a `StreamingResponse`.
 5. The GPU slot is held until the worker thread has actually finished (the future
    is `shield`-awaited), even on client disconnect — preserving the single-GPU

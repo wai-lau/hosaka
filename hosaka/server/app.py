@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from hosaka.chunking import split_fragments
+from hosaka.chunking import pause_ms, split_fragments
 from hosaka.config import (
     CHATTERBOX_MAX_CHARS,
     FIRST_FRAGMENT_MAX_CHARS,
@@ -21,6 +21,7 @@ from hosaka.config import (
     MAX_QUEUE,
     PIPER_VOICES,
     RVC_VOICES,
+    SAMPLE_RATE,
 )
 from hosaka.lexicon import Lexicon
 from hosaka.library import VoiceLibrary
@@ -114,6 +115,13 @@ async def _pcm_frames(engine, voice, params, fragments, gpu_queue):
     loop = asyncio.get_running_loop()
     try:
         for frag in fragments:
+            ms = pause_ms(frag)
+            if ms is not None:
+                # A dash pause: emit real silence (float32 zeros) instead of
+                # synthesizing. The engine never sees the sentinel, so RVC can't
+                # hallucinate phonemes into it.
+                yield b"\x00\x00\x00\x00" * (SAMPLE_RATE * ms // 1000)
+                continue
             queue: asyncio.Queue = asyncio.Queue()
 
             def produce(fragment=frag, queue=queue):
