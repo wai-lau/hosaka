@@ -38,6 +38,11 @@
       button:hover { background: #3a7fc4; }
       #status { margin-top: 0.8rem; color: #889; min-height: 1.3em; }
 
+      /* voice selector + Speak share one row */
+      .row { display: flex; gap: 0.6rem; align-items: stretch; margin: 0.6rem 0; }
+      .row select { flex: 1; width: auto; margin: 0; }
+      .row button { width: auto; margin: 0; white-space: nowrap; padding-left: 1.3rem; padding-right: 1.3rem; }
+
       .knobs { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.4rem; }
       .knob { display: grid; grid-template-columns: 7.5rem 1fr 3rem; align-items: center; gap: 0.6rem; }
       .knob .kname { color: #aab; font-size: 0.85rem; }
@@ -53,7 +58,10 @@
       <h1>HOSAKA</h1>
       <textarea id="text" placeholder="Type something to speak...">Hello from the web.</textarea>
 
-      <select id="voice"><option>loading voices...</option></select>
+      <div class="row">
+        <select id="voice"><option>loading voices...</option></select>
+        <button id="speak">Speak</button>
+      </div>
 
       <div id="cb-knobs">
         <div class="group-label">clone knobs (chatterbox)</div>
@@ -80,7 +88,6 @@
           <span class="kval" id="volume-val"></span></label>
       </div>
 
-      <button id="speak">Speak</button>
       <div id="status">idle</div>
     </main>
     <script src="/app/app.js"></script>
