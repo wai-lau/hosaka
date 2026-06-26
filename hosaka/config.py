@@ -181,7 +181,11 @@ RVC_VOICES = {
         "transpose": 0,  # the clone is already at Charlie's pitch
         "passes": 1,  # single pass -- a 2nd flattens the emotion
         "gate": True,  # mute the output where the source is silent
-        "speed": 1.3,  # output tempo stretch (ffmpeg atempo/WSOLA); request :speed overrides
+        # Output tempo stretch (ffmpeg atempo/WSOLA); request :speed overrides.
+        # 1.1 keeps fast energy and stays ~gapless (RTF ~1.18, thin +0.2s buffer
+        # margin); 1.3 underran (RTF ~1.3, audio too short to outpace gen). See
+        # the audio-gap diagnosis notes in CLAUDE.md.
+        "speed": 1.1,
         "description": "Charlie Morningstar (Hazbin Hotel) -- Chatterbox clone + RVC erika",
     },
 }
