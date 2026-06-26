@@ -78,7 +78,7 @@ and tested in `.venv-dev` the same way.
   stretch via ffmpeg `atempo`/WSOLA -- librosa's phase vocoder colored/smeared
   the voice, swapped out by A/B; ffmpeg is a sidecar runtime dep). `speed` is
   request-overridable (live `:speed`): the request value wins over the voice's
-  configured default (Charlie 1.1), which ships in `/v1/voices` as the voice's
+  configured default (Charlie 1.3), which ships in `/v1/voices` as the voice's
   `speed` and the REPL preloads on `:voice` so it round-trips until tuned.
   A voice sets
   `source_backend` (`kokoro`|`chatterbox`) + `source` (+ `source_params`); the

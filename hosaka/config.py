@@ -175,8 +175,7 @@ RVC_VOICES = {
         "transpose": 0,  # the clone is already at Charlie's pitch
         "passes": 1,  # single pass -- a 2nd flattens the emotion
         "gate": True,  # mute the output where the source is silent
-        "speed": 1.1,  # tempo stretch -- DO NOT set 1.0: the phase vocoder masks
-        # an echo present in the base RVC output; 1.0 (no stretch) brings it back.
+        "speed": 1.3,  # output tempo stretch (ffmpeg atempo/WSOLA); request :speed overrides
         "description": "Charlie Morningstar (Hazbin Hotel) -- Chatterbox clone + RVC erika",
     },
 }
