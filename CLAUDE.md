@@ -194,11 +194,31 @@ cause before touching code:
    (Chatterbox source + RVC, serialized through one GPU slot) sits at RTF ~1.3
    when healthy; ~1.7+ is GPU degradation — **restart the unit and re-measure**
    before "fixing" anything (see the RTF-2.0 rule above).
-3. Sample `nvidia-smi` utilization during a generation: ~26% mean util = the
-   path is serialization/overhead-bound (autoregressive T3 + pipe handoffs +
-   CPU resample/ffmpeg), not compute-bound — idle headroom that stage-overlap
-   could fill.
+3. Sample `nvidia-smi` utilization during a generation: ~26% mean util. This
+   looks like 74% free headroom but **it is not** — see the dead-ends below.
 
 Punctuation only moves *where* seams land, never RTF. The chunker breaks on
 sentence-enders (`. ! ?`); a dash is a pause (real injected silence), not a
 break — see `chunking.split_fragments` / `DASH_PAUSE_MS`.
+
+### RTF / GPU-idle: measured dead-ends (do not re-attempt)
+
+The Charlie path is RTF ~1.1–1.3 healthy. Two "obvious" ways to reclaim the
+~26%-util idle were measured and **rejected** — don't rebuild them:
+
+- **Stage-overlap (RVC while next source generates): not worth it.** The
+  per-fragment split is **Chatterbox source-gen 89% / RVC+resample+ffmpeg 11%**.
+  Overlapping the two GPU stages hides only the 11% (ideal RTF 0.96 vs 1.08).
+  Not worth destabilizing the `Semaphore(1)` + watchdog.
+- **Two concurrent Chatterbox workers: actively worse.** Spike (two model
+  instances, parallel `generate()`): **0.75x** — concurrent ran 33% *slower*
+  than sequential. The idle is latency bubbles *between* tiny dependent
+  autoregressive T3 kernels, not free compute; a second CUDA stream contends for
+  SMs/bandwidth instead of filling them. `nvidia-smi` util% is NOT exploitable
+  headroom for autoregressive decode.
+
+The only lever that could widen each kernel (rather than add a contending stream)
+is **batching multiple fragments into one `generate()`** — unverified, needs a
+chatterbox-streaming batched-decode spike. Otherwise treat RTF ~1.1 as the floor
+and make playback gapless by **pre-buffering** (length-proportional lead or whole
+utterance), not by chasing throughput. Injected dash pauses also add free buffer.
