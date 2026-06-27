@@ -513,3 +513,33 @@ def test_speech_rvc_unavailable_is_400(tmp_path):
         json={"input": "hi", "backend": "rvc", "voice": "charlie"},
     )
     assert r.status_code == 400
+
+
+def _client_piper_only(tmp_path):
+    reg = EngineRegistry(kokoro=None, chatterbox=None, piper=PiperFakeEngine())
+    lib = VoiceLibrary(tmp_path / "voices")
+    return TestClient(create_app(reg, lib, do_warmup=False)), lib
+
+
+def test_piper_only_voices_lists_only_piper(tmp_path):
+    client, lib = _client_piper_only(tmp_path)
+    # A library clip must NOT be advertised as chatterbox when chatterbox is None.
+    seed = tmp_path / "s.wav"
+    seed.write_bytes(b"RIFFfake")
+    lib.add("myclone", seed, source="recording")
+    voices = client.get("/v1/voices").json()
+    backends = {v["backend"] for v in voices}
+    assert backends == {"piper"}
+    ids = {v["id"] for v in voices}
+    assert "glados" in ids
+    assert "nicole" not in ids  # kokoro preset suppressed
+    assert "myclone" not in ids  # chatterbox clip suppressed
+
+
+def test_piper_only_kokoro_request_errors_cleanly(tmp_path):
+    client, _ = _client_piper_only(tmp_path)
+    with client.websocket_connect("/v1/audio/stream") as ws:
+        ws.send_json({"input": "hi", "backend": "kokoro", "voice": "nicole"})
+        msg = ws.receive_json()
+        assert msg["type"] == "error"
+        assert "unavailable" in msg["detail"]

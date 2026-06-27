@@ -74,6 +74,8 @@ def _resolve(registry: EngineRegistry, library: VoiceLibrary, backend: str, voic
         engine = registry.get(backend)
     except KeyError:
         return None, f"unknown backend: {backend}"
+    if engine is None:
+        return None, f"backend unavailable: {backend}"
     if backend == "kokoro":
         if voice not in KOKORO_PRESETS:
             return None, f"unknown kokoro voice: {voice}"
@@ -240,28 +242,31 @@ def create_app(
 
     @app.get("/v1/voices")
     def voices():
-        out = [
-            VoiceInfo(
-                id=p, backend="kokoro", source="preset", description=KOKORO_DESC.get(p, "")
-            ).model_dump()
-            for p in KOKORO_PRESETS
-        ]
+        out = []
+        if registry.kokoro is not None:
+            out += [
+                VoiceInfo(
+                    id=p, backend="kokoro", source="preset", description=KOKORO_DESC.get(p, "")
+                ).model_dump()
+                for p in KOKORO_PRESETS
+            ]
         # Library clips used only as an RVC source (e.g. Charlie's Chatterbox
         # clone) are not standalone voices -- hide them from the listing.
         rvc_sources = {
             s["source"] for s in RVC_VOICES.values() if s.get("source_backend") == "chatterbox"
         }
-        out += [
-            VoiceInfo(
-                id=e.id,
-                backend="chatterbox",
-                source=e.source,
-                description=e.params.get("description", ""),
-                cb=True,
-            ).model_dump()
-            for e in library.list()
-            if e.id not in rvc_sources
-        ]
+        if registry.chatterbox is not None:
+            out += [
+                VoiceInfo(
+                    id=e.id,
+                    backend="chatterbox",
+                    source=e.source,
+                    description=e.params.get("description", ""),
+                    cb=True,
+                ).model_dump()
+                for e in library.list()
+                if e.id not in rvc_sources
+            ]
         if registry.piper is not None:
             out += [
                 VoiceInfo(

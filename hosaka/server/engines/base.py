@@ -13,12 +13,12 @@ class Engine(Protocol):
 
 @dataclass
 class EngineRegistry:
-    kokoro: Engine
-    chatterbox: Engine
+    kokoro: Engine | None = None
+    chatterbox: Engine | None = None
     piper: Engine | None = None  # optional CPU sidecar (character voices)
     rvc: Engine | None = None  # optional GPU sidecar (converted character voices)
 
-    def get(self, backend: str) -> Engine:
+    def get(self, backend: str) -> Engine | None:
         if backend == "kokoro":
             return self.kokoro
         if backend == "chatterbox":
@@ -34,8 +34,10 @@ class EngineRegistry:
         raise KeyError(f"unknown backend: {backend}")
 
     def warmup_all(self) -> None:
-        self.kokoro.warmup()
-        self.chatterbox.warmup()
+        if self.kokoro is not None:
+            self.kokoro.warmup()
+        if self.chatterbox is not None:
+            self.chatterbox.warmup()
         if self.piper is not None:
             self.piper.warmup()
         if self.rvc is not None:
