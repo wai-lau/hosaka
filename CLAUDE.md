@@ -156,6 +156,10 @@ and tested in `.venv-dev` the same way.
   fallback when no unit exists (see `_startup_action` in `repl.py`). A spawn
   that races the unit for the port orphans and squats it, breaking the unit.
   For remote use it is reverse-proxied by the exec-fn app — see ARCHITECTURE.md.
+- GLaDOS is also served on the droplet by `hosaka-piper:latest` (built from
+  `Dockerfile.piper`): a CPU-only container, no torch, GLaDOS `.onnx` baked in,
+  running `hosaka.server.main_piper:app` on port 8123. The home-box GPU server
+  is unchanged.
 
 ## Linting
 

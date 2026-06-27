@@ -333,6 +333,11 @@ this box over an SSH tunnel and gates it behind that app's session-cookie auth â
 no ports are opened on the home box. The bundled `/app/` client is for local
 testing.
 
+The droplet also runs a piper-only container (`hosaka-piper:latest`, built from
+`Dockerfile.piper`) that serves GLaDOS on port 8123. It is CPU-only (no torch),
+with the GLaDOS `.onnx` baked in at image build time. The home box setup
+(GPU server + all five venvs) is unchanged.
+
 ## Why five venvs
 
 `.venv-server`, the bake CLI (`.venv-bake`), the Piper sidecar (`.venv-piper`),

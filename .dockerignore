@@ -1,0 +1,11 @@
+.venv
+.venv-*
+.git
+__pycache__
+**/__pycache__
+*.pyc
+graphify-out
+docs
+tests
+.pytest_cache
+.ruff_cache
