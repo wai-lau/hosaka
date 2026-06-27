@@ -10,9 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV HOME=/opt/hosaka
 WORKDIR /app
 
-# CPU-only deps. NO torch, NO cu128 index. Pin to match the working .venv-piper.
+# CPU-only deps. NO torch, NO cu128 index. Pin TTS deps to the working
+# .venv-piper. `websockets` is required for the /v1/audio/stream WS endpoint --
+# without a WS library uvicorn serves HTTP only and the stream route 404s.
 RUN pip install --no-cache-dir \
-        fastapi uvicorn pydantic \
+        fastapi uvicorn websockets pydantic \
         piper-tts==1.4.2 onnxruntime==1.27.0 scipy==1.18.0 numpy==2.5.0
 
 # Bake the GLaDOS model (the fetch script writes to $HOME/.local/share/hosaka/piper).
