@@ -28,4 +28,10 @@ COPY hosaka /app/hosaka
 RUN mkdir -p $HOME/.local/share/hosaka/voices
 
 EXPOSE 8123
+
+# Liveness: /health returns 200 once the app is up. Lets the compose
+# restart policy also recover a wedged-but-running container.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8123/health || exit 1
+
 CMD ["uvicorn", "hosaka.server.main_piper:app", "--host", "0.0.0.0", "--port", "8123"]
