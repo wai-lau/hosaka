@@ -166,7 +166,9 @@ and tested in `.venv-dev` the same way.
   immediately (`_push_lexicon` in `repl.py`, since the atomic tmp+rename write
   can dodge a single-file inotify watch); the `hosaka-lexicon-sync.path` systemd
   unit is a backup for in-place manual edits. `normalize.py` (code) instead
-  reaches droplet glados only on an image rebuild.
+  reaches droplet glados only on an image rebuild -- run
+  `scripts/update_glados_droplet.sh` after pushing such a change (pulls
+  `/hosaka`, rebuilds `hosaka-piper`, recreates the service).
 
 ## Linting
 
