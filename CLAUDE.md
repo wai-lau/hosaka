@@ -159,7 +159,12 @@ and tested in `.venv-dev` the same way.
 - GLaDOS is also served on the droplet by `hosaka-piper:latest` (built from
   `Dockerfile.piper`): a CPU-only container, no torch, GLaDOS `.onnx` baked in,
   running `hosaka.server.main_piper:app` on port 8123. The home-box GPU server
-  is unchanged.
+  is unchanged. The personal `lexicon.json` is NOT baked in (untracked data);
+  the home box pushes it on edit via `scripts/sync_lexicon.sh` (systemd
+  `hosaka-lexicon-sync.path`, `rsync --inplace`) and the container bind-mounts
+  it read-only -- `rsync --inplace` keeps the inode so `Lexicon` hot-reloads it
+  live without a restart. `normalize.py` (code) instead reaches droplet glados
+  only on an image rebuild.
 
 ## Linting
 

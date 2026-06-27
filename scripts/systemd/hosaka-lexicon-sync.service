@@ -1,0 +1,17 @@
+# Sync the hosaka pronunciation lexicon to the droplet hosaka-piper container.
+# Oneshot; triggered by hosaka-lexicon-sync.path on every lexicon edit so the
+# always-on glados applies the same pronunciations as the home box.
+#
+# Install (home box ONLY -- this is the sync SOURCE):
+#   cp scripts/systemd/hosaka-lexicon-sync.{service,path} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now hosaka-lexicon-sync.path
+#   loginctl enable-linger "$USER"   # survive logout / boot on WSL start
+#
+# Manual one-off: scripts/sync_lexicon.sh
+[Unit]
+Description=Sync hosaka pronunciation lexicon to the droplet
+
+[Service]
+Type=oneshot
+ExecStart=/home/wai/src/hosaka/scripts/sync_lexicon.sh

@@ -338,6 +338,16 @@ The droplet also runs a piper-only container (`hosaka-piper:latest`, built from
 with the GLaDOS `.onnx` baked in at image build time. The home box setup
 (GPU server + all five venvs) is unchanged.
 
+The custom-pronunciation **lexicon** (`DATA_DIR/lexicon.json`) is personal,
+untracked data, so it is not baked into the image. Instead the home box pushes
+it to the droplet on every edit (`scripts/sync_lexicon.sh` via the
+`hosaka-lexicon-sync.path` systemd unit, `rsync --inplace`), and the container
+bind-mounts it read-only at `DATA_DIR/lexicon.json`. `rsync --inplace` preserves
+the file's inode so the single-file bind mount sees the new mtime and hosaka's
+`Lexicon` hot-reloads it live -- no container restart. (Code-level
+normalization in `normalize.py` ships in the image instead, so it reaches
+droplet glados only on an image rebuild.)
+
 ## Why five venvs
 
 `.venv-server`, the bake CLI (`.venv-bake`), the Piper sidecar (`.venv-piper`),

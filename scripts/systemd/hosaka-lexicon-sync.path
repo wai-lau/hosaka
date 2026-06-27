@@ -1,0 +1,11 @@
+# Watch the home-box lexicon; fire hosaka-lexicon-sync.service on every change
+# (a .path triggers the .service of the same name). See the .service file for
+# install instructions. Near-instant sync; the container hot-reloads via mtime.
+[Unit]
+Description=Watch hosaka lexicon for changes
+
+[Path]
+PathChanged=/home/wai/.local/share/hosaka/lexicon.json
+
+[Install]
+WantedBy=default.target
