@@ -391,70 +391,130 @@ git push origin main
 
 Make `routes_tts.py` hold two upstreams and route each utterance by backend: glados -> `hosaka-piper`, everything else -> the home tunnel. Merge voices so glados is always listed; report health as either-up.
 
+**Testability note (drives the design):** exec-fn is Docker-only. Its dev venv (`.venv` from `requirements-dev.txt`) holds only `pytest httpx playwright` — NOT `fastapi`/`websockets`. And `routes_tts` imports `auth`/`pages`/`routers` at module load, which cascade into the whole app (`routes_chat` -> anthropic, etc.). So a test CANNOT import `routes_tts`. The routing/merge DECISION is pure, so we extract it into a stdlib-only module `api/tts_routing.py` that the dev venv can import with zero heavy deps; `routes_tts` imports the helpers and keeps only the FastAPI/httpx/websockets plumbing. The WS/HTTP wiring itself is verified live in Task 6 (the repo's smoke-test philosophy), not unit-tested.
+
 **Files:**
-- Modify: `~/src/exec-fn/api/routes_tts.py`
-- Test: `~/src/exec-fn/tests/test_tts_routing.py` (new; pure unit tests, no running app)
+- Create: `~/src/exec-fn/api/tts_routing.py` (pure, stdlib-only: routing decision + voices merge)
+- Modify: `~/src/exec-fn/api/routes_tts.py` (import the helpers; add `_PIPER_UPSTREAM`; rewrite voices/health/ws)
+- Test: `~/src/exec-fn/tests/test_tts_routing.py` (new; imports ONLY `tts_routing`)
 
 **Interfaces:**
 - Consumes: env `TTS_UPSTREAM` (home, default `172.17.0.1:8123`), new env `TTS_PIPER_UPSTREAM` (default `hosaka-piper:8123`).
-- Produces: pure helper `_upstream_for(req: dict) -> str` returning the piper upstream when `req.get("backend") == "piper"`, else the home upstream; `/api/hosaka/voices` merge (piper voices always, home voices when reachable); `/api/hosaka/health` returning `{"ok": bool, "home": bool, "piper": bool}`.
+- Produces (in `tts_routing.py`, both pure, no imports beyond stdlib):
+  - `pick_upstream(req, home: str, piper: str) -> str` — returns `piper` when `isinstance(req, dict) and req.get("backend") == "piper"`, else `home`.
+  - `merge_voices(piper_voices: list[dict], home_voices: list[dict]) -> list[dict]` — the `backend == "piper"` entries of `piper_voices`, then the `backend != "piper"` entries of `home_voices`.
+- Produces (in `routes_tts.py`): `/api/hosaka/voices` merge (piper voices always, home voices when reachable); `/api/hosaka/health` returning `{"ok": bool, "home": bool, "piper": bool}`.
 
-- [ ] **Step 1: Write the failing unit tests**
+- [ ] **Step 1: Ensure the exec-fn dev venv exists (to run the test)**
+
+Run (creates the documented dev venv if absent; idempotent):
+
+```bash
+cd ~/src/exec-fn
+[ -d .venv ] || python3 -m venv .venv
+.venv/bin/pip install -q -r requirements-dev.txt
+```
+
+(The `playwright` browser binary is NOT needed for this task — only the pip packages.)
+
+- [ ] **Step 2: Write the failing unit tests**
 
 Create `~/src/exec-fn/tests/test_tts_routing.py`:
 
 ```python
-import importlib
 import os
+import sys
 
-os.environ.setdefault("TTS_UPSTREAM", "home:8123")
-os.environ.setdefault("TTS_PIPER_UPSTREAM", "piper:8123")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
 
-routes_tts = importlib.import_module("routes_tts")
-
-
-def test_upstream_for_piper_goes_to_piper():
-    assert routes_tts._upstream_for({"backend": "piper", "voice": "glados"}) == "piper:8123"
+from tts_routing import merge_voices, pick_upstream  # noqa: E402
 
 
-def test_upstream_for_kokoro_goes_home():
-    assert routes_tts._upstream_for({"backend": "kokoro", "voice": "nicole"}) == "home:8123"
+def test_pick_upstream_piper_goes_to_piper():
+    assert pick_upstream({"backend": "piper", "voice": "glados"}, "home:1", "piper:1") == "piper:1"
 
 
-def test_upstream_for_missing_backend_defaults_home():
-    assert routes_tts._upstream_for({"voice": "nicole"}) == "home:8123"
+def test_pick_upstream_kokoro_goes_home():
+    assert pick_upstream({"backend": "kokoro", "voice": "nicole"}, "home:1", "piper:1") == "home:1"
+
+
+def test_pick_upstream_missing_backend_defaults_home():
+    assert pick_upstream({"voice": "nicole"}, "home:1", "piper:1") == "home:1"
+
+
+def test_pick_upstream_non_dict_defaults_home():
+    assert pick_upstream("garbage", "home:1", "piper:1") == "home:1"
+
+
+def test_merge_voices_keeps_piper_from_piper_and_rest_from_home():
+    piper = [{"id": "glados", "backend": "piper"}, {"id": "sneaky", "backend": "kokoro"}]
+    home = [{"id": "nicole", "backend": "kokoro"}, {"id": "glados", "backend": "piper"}]
+    out = merge_voices(piper, home)
+    pairs = [(v["id"], v["backend"]) for v in out]
+    assert ("glados", "piper") in pairs       # glados from the piper upstream
+    assert ("nicole", "kokoro") in pairs       # gpu voice from the home upstream
+    assert ("sneaky", "kokoro") not in pairs   # non-piper from piper upstream dropped
+    assert pairs.count(("glados", "piper")) == 1  # home's piper entry dropped (no dup)
 ```
 
-(`tests/conftest.py` already puts `api/` on the path for `import routes_tts`; if not, add `sys.path.insert(0, ".../api")` in the test.)
+- [ ] **Step 3: Run to verify failure**
 
-- [ ] **Step 2: Run to verify failure**
+Run: `cd ~/src/exec-fn && .venv/bin/python -m pytest tests/test_tts_routing.py -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'tts_routing'`.
 
-Run: `cd ~/src/exec-fn && python -m pytest tests/test_tts_routing.py -v`
-Expected: FAIL — `_upstream_for` does not exist yet.
+- [ ] **Step 4: Write the pure `tts_routing.py`**
 
-- [ ] **Step 3: Add the dual upstream + helper**
+Create `~/src/exec-fn/api/tts_routing.py`:
 
-In `~/src/exec-fn/api/routes_tts.py`, below the existing `_UPSTREAM`:
+```python
+"""Pure routing decisions for the TTS proxy -- stdlib only, no FastAPI/httpx.
+
+Kept dependency-free so the dev venv (pytest + httpx, no fastapi) can import
+and unit-test it without dragging the whole app graph (auth/pages/routers ->
+anthropic, etc.). routes_tts.py imports these and keeps only the plumbing."""
+
+
+def pick_upstream(req, home: str, piper: str) -> str:
+    """Route one utterance to its backend's upstream. Glados (backend "piper")
+    is served by the always-on droplet container; every other backend goes to
+    the home GPU box over the SSH tunnel. A non-dict request defaults home."""
+    if isinstance(req, dict) and req.get("backend") == "piper":
+        return piper
+    return home
+
+
+def merge_voices(piper_voices: list[dict], home_voices: list[dict]) -> list[dict]:
+    """Merge the two upstreams' voice lists: the piper voices come from the
+    always-on piper upstream, everything else from the home box. Filtering each
+    side by backend keeps glados authoritative on the droplet and avoids a
+    duplicate if the home box also happens to advertise piper."""
+    out = [v for v in piper_voices if v.get("backend") == "piper"]
+    out += [v for v in home_voices if v.get("backend") != "piper"]
+    return out
+```
+
+- [ ] **Step 5: Run to verify the unit tests pass**
+
+Run: `cd ~/src/exec-fn && .venv/bin/python -m pytest tests/test_tts_routing.py -v`
+Expected: PASS (5 tests).
+
+- [ ] **Step 6: Wire `routes_tts.py` to the helpers + dual upstream**
+
+In `~/src/exec-fn/api/routes_tts.py`, add the import near the other flat imports (`from auth import ...`):
+
+```python
+from tts_routing import merge_voices, pick_upstream
+```
+
+Below the existing `_UPSTREAM`, add the piper upstream:
 
 ```python
 _UPSTREAM = os.environ.get("TTS_UPSTREAM", "172.17.0.1:8123")
 # Always-on droplet-local piper (glados). Separate from the home GPU tunnel.
 _PIPER_UPSTREAM = os.environ.get("TTS_PIPER_UPSTREAM", "hosaka-piper:8123")
-
-
-def _upstream_for(req: dict) -> str:
-    """Route an utterance to its backend's upstream. Glados (piper) is served
-    by the always-on droplet container; every other backend goes to the home
-    GPU box over the SSH tunnel."""
-    return _PIPER_UPSTREAM if req.get("backend") == "piper" else _UPSTREAM
 ```
 
-- [ ] **Step 4: Run to verify the helper tests pass**
-
-Run: `cd ~/src/exec-fn && python -m pytest tests/test_tts_routing.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Merge voices (glados always present)**
+- [ ] **Step 7: Merge voices (glados always present)**
 
 Replace `tts_voices` in `routes_tts.py`:
 
@@ -467,21 +527,18 @@ async def _get_voices(upstream: str):
 
 @guest_protected.get("/api/hosaka/voices")
 async def tts_voices():
-    out = []
-    # Piper upstream is always-on; keep only its piper voices (glados).
-    try:
-        out += [v for v in await _get_voices(_PIPER_UPSTREAM) if v.get("backend") == "piper"]
-    except Exception:
-        pass
-    # Home box: contribute its (non-piper) voices when reachable.
-    try:
-        out += [v for v in await _get_voices(_UPSTREAM) if v.get("backend") != "piper"]
-    except Exception:
-        pass
-    return JSONResponse(out)
+    async def safe(upstream: str):
+        try:
+            return await _get_voices(upstream)
+        except Exception:
+            return []
+
+    piper_voices = await safe(_PIPER_UPSTREAM)
+    home_voices = await safe(_UPSTREAM)
+    return JSONResponse(merge_voices(piper_voices, home_voices))
 ```
 
-- [ ] **Step 6: Per-upstream health**
+- [ ] **Step 8: Per-upstream health**
 
 Replace `tts_health` in `routes_tts.py`:
 
@@ -505,9 +562,9 @@ async def tts_health():
     return JSONResponse({"ok": ok, "home": home, "piper": piper}, status_code=200 if ok else 503)
 ```
 
-- [ ] **Step 7: Route the WS per utterance**
+- [ ] **Step 9: Route the WS per utterance**
 
-Rewrite `ws_tts` so it lazily opens (and caches) one upstream connection per backend and dispatches each utterance. Keep the cookie gate unchanged. Replace the body after `await ws.accept()`:
+Rewrite `ws_tts` so it lazily opens (and caches) one upstream connection per backend and dispatches each utterance via `pick_upstream`. Keep the cookie gate unchanged. Replace the body after `await ws.accept()`:
 
 ```python
 @public.websocket("/ws/hosaka")
@@ -523,7 +580,7 @@ async def ws_tts(ws: WebSocket):
     conns: dict[str, object] = {}   # upstream url -> open websocket
     pumps: list = []                # upstream->client pump tasks
 
-    async def upstream_for_url(url):
+    async def connect(url):
         if url not in conns:
             up = await websockets.connect(f"ws://{url}/v1/audio/stream", max_size=None)
             conns[url] = up
@@ -542,9 +599,9 @@ async def ws_tts(ws: WebSocket):
             except Exception:
                 await ws.send_text(json.dumps({"type": "error", "detail": "bad request json"}))
                 continue
-            url = _upstream_for(req if isinstance(req, dict) else {})
+            url = pick_upstream(req, _UPSTREAM, _PIPER_UPSTREAM)
             try:
-                up = await upstream_for_url(url)
+                up = await connect(url)
             except Exception:
                 await ws.send_text(json.dumps({"type": "error", "detail": "tts upstream unreachable"}))
                 continue
@@ -567,17 +624,18 @@ async def ws_tts(ws: WebSocket):
 
 Keep `_pump_to_client` as-is. `_pump_to_upstream` is no longer used (the loop forwards text directly so it can route per utterance) — delete it.
 
-- [ ] **Step 8: Run the routing unit tests + exec-fn suite**
+- [ ] **Step 10: Run the unit tests + lint**
 
-Run: `cd ~/src/exec-fn && python -m pytest tests/test_tts_routing.py -v && python -m pytest -q`
-Expected: routing tests PASS; the rest of the suite is unaffected (integration tests that need a running app skip as before).
+Run: `cd ~/src/exec-fn && .venv/bin/python -m pytest tests/test_tts_routing.py -v`
+Expected: PASS (5 tests). (The live smoke suite needs the running container; it is exercised in Task 6, not here.)
+Then lint: `cd ~/src/exec-fn && ruff check --fix . && ruff format .`
+(`routes_tts.py` stays well under the repo's 500-line cap; confirm with `wc -l api/routes_tts.py`.)
 
-- [ ] **Step 9: Lint + commit + push (exec-fn)**
+- [ ] **Step 11: Commit + push (exec-fn)**
 
 ```bash
 cd ~/src/exec-fn
-ruff check --fix . && ruff format .
-git add api/routes_tts.py tests/test_tts_routing.py
+git add api/tts_routing.py api/routes_tts.py tests/test_tts_routing.py
 git commit -m "feat(tts): route glados to always-on piper, gpu to home tunnel"
 git push
 ```
