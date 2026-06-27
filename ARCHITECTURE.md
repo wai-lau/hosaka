@@ -339,14 +339,16 @@ with the GLaDOS `.onnx` baked in at image build time. The home box setup
 (GPU server + all five venvs) is unchanged.
 
 The custom-pronunciation **lexicon** (`DATA_DIR/lexicon.json`) is personal,
-untracked data, so it is not baked into the image. Instead the home box pushes
-it to the droplet on every edit (`scripts/sync_lexicon.sh` via the
-`hosaka-lexicon-sync.path` systemd unit, `rsync --inplace`), and the container
+untracked data, so it is not baked into the image. The home box pushes it to the
+droplet with `scripts/sync_lexicon.sh` (`rsync --inplace`), and the container
 bind-mounts it read-only at `DATA_DIR/lexicon.json`. `rsync --inplace` preserves
 the file's inode so the single-file bind mount sees the new mtime and hosaka's
-`Lexicon` hot-reloads it live -- no container restart. (Code-level
-normalization in `normalize.py` ships in the image instead, so it reaches
-droplet glados only on an image rebuild.)
+`Lexicon` hot-reloads it live -- no container restart. Two triggers: the REPL
+`:pron add/rm` command pushes **immediately** (it writes atomically -- tmp+rename
+-- and calls the script directly, since a single-file inotify watch can miss the
+rename); the `hosaka-lexicon-sync.path` systemd unit is a backup that catches
+in-place manual edits. (Code-level normalization in `normalize.py` ships in the
+image instead, so it reaches droplet glados only on an image rebuild.)
 
 ## Why five venvs
 

@@ -125,6 +125,26 @@ def _spawn_server() -> None:
         raise RuntimeError(f"server did not become healthy; see {log_path} for the cause")
 
 
+def _push_lexicon() -> None:
+    """Push the lexicon to the droplet so the always-on glados picks up a :pron
+    change immediately. :pron writes atomically (tmp+rename), which a single-file
+    inotify watch can miss, so push directly here rather than rely on the systemd
+    path unit (that unit stays a backup for in-place manual edits). Best-effort:
+    a missing script or an unreachable droplet prints a note, never raises."""
+    script = Path(__file__).resolve().parents[2] / "scripts" / "sync_lexicon.sh"
+    if not script.exists():
+        return
+    try:
+        r = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        print("  (droplet push skipped)")
+        return
+    if r.returncode == 0:
+        print("  (pushed to droplet)")
+    else:
+        print(f"  (droplet push failed: {(r.stderr or '').strip() or r.returncode})")
+
+
 def _ensure_server() -> None:
     """Make a healthy server reachable, deferring to systemd when it owns the
     port and only spawning our own as a last resort. See _startup_action."""
@@ -271,9 +291,12 @@ def main():
                         word, respelling = val
                         add_entry(LEXICON_PATH, word, respelling)
                         print(f"  {word} -> {respelling}")
+                        _push_lexicon()
                     elif sub == "rm":
                         _, removed = remove_entry(LEXICON_PATH, val)
                         print(f"  {'removed' if removed else 'not found'}: {val}")
+                        if removed:
+                            _push_lexicon()
                 elif a.kind == "voices":
                     for v in httpx.get(f"{SERVER_URL}/v1/voices").json():
                         print(f"  {v['id']:20s} {'cb' if v.get('cb') else 'non-cb'}")

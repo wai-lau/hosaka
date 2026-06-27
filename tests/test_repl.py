@@ -8,7 +8,7 @@ policy purely so it can be tested without touching the network or systemd.
 
 import pytest
 
-from hosaka.cli.repl import _startup_action
+from hosaka.cli.repl import _push_lexicon, _startup_action
 
 
 def test_attach_when_server_already_up():
@@ -36,3 +36,50 @@ def test_wait_when_unit_is_providing(active):
 def test_start_unit_when_installed_but_down(active):
     # Unit installed but stopped/failed -> ask systemd to start it, don't spawn.
     assert _startup_action(False, "loaded", active) == "start_unit"
+
+
+class _FakeCP:
+    def __init__(self, returncode=0, stderr=""):
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def test_push_lexicon_runs_sync_script(monkeypatch, capsys):
+    # :pron must push the lexicon to the droplet immediately. The helper shells
+    # out to scripts/sync_lexicon.sh.
+    import hosaka.cli.repl as repl
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return _FakeCP(returncode=0)
+
+    monkeypatch.setattr(repl.subprocess, "run", fake_run)
+    _push_lexicon()
+    assert seen["cmd"][0] == "bash"
+    assert seen["cmd"][1].endswith("scripts/sync_lexicon.sh")
+    assert "pushed to droplet" in capsys.readouterr().out
+
+
+def test_push_lexicon_failure_is_nonfatal(monkeypatch, capsys):
+    # An unreachable droplet (or any subprocess error) must never break the REPL.
+    import hosaka.cli.repl as repl
+
+    def boom(cmd, **kw):
+        raise OSError("no ssh")
+
+    monkeypatch.setattr(repl.subprocess, "run", boom)
+    _push_lexicon()  # must not raise
+    assert "skipped" in capsys.readouterr().out
+
+
+def test_push_lexicon_nonzero_reports_failure(monkeypatch, capsys):
+    import hosaka.cli.repl as repl
+
+    monkeypatch.setattr(
+        repl.subprocess, "run", lambda cmd, **kw: _FakeCP(1, "ssh: connect refused")
+    )
+    _push_lexicon()
+    out = capsys.readouterr().out
+    assert "failed" in out and "connect refused" in out

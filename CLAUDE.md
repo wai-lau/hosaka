@@ -160,11 +160,13 @@ and tested in `.venv-dev` the same way.
   `Dockerfile.piper`): a CPU-only container, no torch, GLaDOS `.onnx` baked in,
   running `hosaka.server.main_piper:app` on port 8123. The home-box GPU server
   is unchanged. The personal `lexicon.json` is NOT baked in (untracked data);
-  the home box pushes it on edit via `scripts/sync_lexicon.sh` (systemd
-  `hosaka-lexicon-sync.path`, `rsync --inplace`) and the container bind-mounts
-  it read-only -- `rsync --inplace` keeps the inode so `Lexicon` hot-reloads it
-  live without a restart. `normalize.py` (code) instead reaches droplet glados
-  only on an image rebuild.
+  the home box pushes it via `scripts/sync_lexicon.sh` (`rsync --inplace`) and
+  the container bind-mounts it read-only -- `rsync --inplace` keeps the inode so
+  `Lexicon` hot-reloads it live without a restart. REPL `:pron add/rm` pushes
+  immediately (`_push_lexicon` in `repl.py`, since the atomic tmp+rename write
+  can dodge a single-file inotify watch); the `hosaka-lexicon-sync.path` systemd
+  unit is a backup for in-place manual edits. `normalize.py` (code) instead
+  reaches droplet glados only on an image rebuild.
 
 ## Linting
 
