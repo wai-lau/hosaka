@@ -1,0 +1,5 @@
+# Lets the gpu-mode service (running as wai) start/stop the ollama system unit
+# without a password. Scope is exactly these two argv -- nothing else.
+# Install: sudo install -m 0440 -o root -g root deploy/gpu-mode.sudoers /etc/sudoers.d/gpu-mode
+# Validate BEFORE trusting: sudo visudo -cf /etc/sudoers.d/gpu-mode
+wai ALL=(root) NOPASSWD: /usr/bin/systemctl start ollama, /usr/bin/systemctl stop ollama
