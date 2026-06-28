@@ -156,6 +156,15 @@ and tested in `.venv-dev` the same way.
   fallback when no unit exists (see `_startup_action` in `repl.py`). A spawn
   that races the unit for the port orphans and squats it, breaking the unit.
   For remote use it is reverse-proxied by the exec-fn app — see ARCHITECTURE.md.
+- A second always-on user unit `gpu-mode.service` (tracked under `scripts/systemd/`)
+  runs `hosaka/server/main_gpu_mode.py` under `.venv-dev` on `127.0.0.1:8124`.
+  It is GPU-free and torch-free. It arbitrates the home-box GPU between
+  hosaka-server and ollama by shelling to `scripts/gpu_mode.sh`; `~/bin/homo`
+  and `~/bin/emo` are thin wrappers over that script. Ollama is a system unit,
+  so `deploy/gpu-mode.sudoers` grants NOPASSWD for exactly `systemctl start/stop
+  ollama` (nothing wider). The `hosaka-tunnel.service` reverse-forwards port
+  8124 to the droplet (`172.17.0.1:8124`) so the exec-fn owner toggle can reach
+  this service remotely. See `## GPU-mode arbiter service` in ARCHITECTURE.md.
 - GLaDOS is also served on the droplet by `hosaka-piper:latest` (built from
   `Dockerfile.piper`): a CPU-only container, no torch, GLaDOS `.onnx` baked in,
   running `hosaka.server.main_piper:app` on port 8123. The home-box GPU server

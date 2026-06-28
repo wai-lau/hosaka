@@ -333,8 +333,28 @@ the home-box GPU between the TTS server and ollama by shelling out to
 `scripts/gpu_mode.sh` (systemctl start/stop of the two services). Routes:
 `GET /mode` returns `{"mode": "homo"|"emo"|"idle"}`, and `POST /homo|/emo|/idle`
 transitions to that mode. All routes require `Authorization: Bearer $GPU_MODE_TOKEN`.
-The service will be reverse-tunneled to the droplet (so remote clients can
-toggle GPU mode); that tunnel and the systemd unit are later tasks.
+
+Four modes (XOR, computed by this service except `gone`):
+
+| Mode | Meaning |
+|------|---------|
+| `homo` | hosaka-server up, ollama down -- TTS holds the GPU |
+| `emo`  | ollama up, hosaka-server down -- LLM holds the GPU |
+| `idle` | both services down, home service reachable |
+| `gone` | exec-fn cannot reach the home service (exec-fn label only; never returned by this service) |
+
+The service runs as the systemd user unit `gpu-mode.service` (tracked under
+`scripts/systemd/`), linger-enabled alongside `hosaka-server.service`. The
+`hosaka-tunnel.service` reverse-forwards this port too, so the droplet's docker
+bridge (`172.17.0.1:8124`) reaches the home service. Controlling ollama (a system
+unit) requires sudo; `deploy/gpu-mode.sudoers` grants `wai` NOPASSWD for exactly
+`systemctl start ollama` and `systemctl stop ollama` -- nothing wider. The
+thin wrappers `~/bin/homo` and `~/bin/emo` call `scripts/gpu_mode.sh` directly
+from the shell. On the exec-fn droplet, the owner-only `/api/hosaka/mode`
+endpoint (protected router) proxies this service over the tunnel, and the
+`/hosaka` page shows an `emo|idle|homo` segmented control visible to owners only;
+`emo` and `idle` (which stop hosaka-server) confirm against the connected-user
+count before acting.
 
 ## Remote / web access
 
