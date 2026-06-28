@@ -10,7 +10,7 @@
 # Usage: scripts/update_glados_droplet.sh   (HOSAKA_DROPLET overrides the host)
 set -euo pipefail
 
-DEST_HOST="${HOSAKA_DROPLET:-root@wai-lau.net}"
+DEST_HOST="${HOSAKA_DROPLET:-wai-root@wai-lau.net}"
 
 ssh "$DEST_HOST" 'set -e
   cd /hosaka && git pull --ff-only

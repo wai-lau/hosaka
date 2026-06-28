@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SRC="${HOME}/.local/share/hosaka/lexicon.json"
-DEST_HOST="${HOSAKA_DROPLET:-root@wai-lau.net}"
+DEST_HOST="${HOSAKA_DROPLET:-wai-root@wai-lau.net}"
 DEST_PATH="/srv/hosaka-piper/lexicon.json"
 
 [ -f "$SRC" ] || { echo "no lexicon at $SRC; nothing to sync"; exit 0; }
