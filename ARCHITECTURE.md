@@ -325,6 +325,17 @@ for it, or starting it via `systemctl --user start` — and spawns its own
 process only as a fallback when no unit exists, so it never competes with the
 unit for the port. The decision is the pure `_startup_action` in `repl.py`.
 
+## GPU-mode arbiter service
+
+A second always-on service (`hosaka/server/main_gpu_mode.py`) runs under
+`.venv-dev` on `127.0.0.1:8124`. It is GPU-free and torch-free; it arbitrates
+the home-box GPU between the TTS server and ollama by shelling out to
+`scripts/gpu_mode.sh` (systemctl start/stop of the two services). Routes:
+`GET /mode` returns `{"mode": "homo"|"emo"|"idle"}`, and `POST /homo|/emo|/idle`
+transitions to that mode. All routes require `Authorization: Bearer $GPU_MODE_TOKEN`.
+The service will be reverse-tunneled to the droplet (so remote clients can
+toggle GPU mode); that tunnel and the systemd unit are later tasks.
+
 ## Remote / web access
 
 The server binds loopback only. For remote use it is consumed by a separate app
