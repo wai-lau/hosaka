@@ -25,7 +25,7 @@ shell, so the GPU can be handed between TTS and the LLM remotely.
 ## Constraints discovered
 
 1. **Self-kill.** `emo` stops `hosaka-server`. The toggle therefore CANNOT live
-   inside hosaka-server: in emet mode that process is dead, so the button could
+   inside hosaka-server: in `emo` mode that process is dead, so the button could
    never flip back. The switch must run in a separate, always-on host.
 2. **No public ingress to the home box.** The home box (WSL2, behind NAT) is
    reachable only via the existing `hosaka-tunnel` reverse SSH tunnel that
@@ -49,10 +49,30 @@ shell, so the GPU can be handed between TTS and the LLM remotely.
 - **ollama permission:** scoped `/etc/sudoers.d` NOPASSWD rule for exactly
   `systemctl start ollama` and `systemctl stop ollama`, user `wai`. (Rejected:
   converting ollama to a user unit -- re-provisions the existing install.)
-- **Active-user guard:** the `emo` direction warns and requires confirmation
-  when `_presence` is non-empty; `homo` never needs it.
+- **Active-user guard:** any action that STOPS hosaka-server (`emo` and `idle`)
+  warns and requires confirmation when `_presence` is non-empty; `homo` (which
+  starts hosaka) never needs it.
 - **Auth:** the exec-fn route is owner-only (`require_auth` / `protected`
   router), NOT guest. Guests must never flip the GPU.
+
+## Modes
+
+Exactly four, mutually exclusive (XOR):
+
+| Mode | Meaning | Derived from |
+|------|---------|--------------|
+| `homo` | hosaka TTS holds the GPU | hosaka-server up, ollama down |
+| `emo`  | ollama LLM holds the GPU | ollama up, hosaka-server down |
+| `idle` | GPU online but no payload running | both services down, home service reachable |
+| `gone` | GPU unreachable or off | exec-fn cannot reach the home `gpu-mode` service |
+
+`homo`/`emo`/`idle` are computed by the home `gpu-mode` service (it can see the
+two units). `gone` is the exec-fn layer's label when the proxy call to the home
+service fails -- the service itself never returns `gone`.
+
+Both-services-up is NOT a mode: it is an invariant violation that cannot happen
+because each toggle stops the other unit before starting the target. If ever
+observed it is logged and re-read, never displayed.
 
 ## Architecture
 
@@ -60,13 +80,16 @@ shell, so the GPU can be handed between TTS and the LLM remotely.
 
 GPU-free, always-on. Runs under `.venv-dev` (fastapi + httpx, NO torch).
 
-- **`scripts/gpu_mode.sh {homo|emo|status}`** -- single source of truth for the
-  systemctl logic.
+- **`scripts/gpu_mode.sh {homo|emo|idle|status}`** -- single source of truth for
+  the systemctl logic.
   - `homo`: `sudo systemctl stop ollama` + `systemctl --user start hosaka-server`.
   - `emo`: `systemctl --user stop hosaka-server` + `sudo systemctl start ollama`.
-  - `status`: derive mode from `systemctl is-active ollama` +
-    `systemctl --user is-active hosaka-server` -> one of
-    `hosaka` | `emet` | `mixed` | `off`.
+  - `idle`: `systemctl --user stop hosaka-server` + `sudo systemctl stop ollama`
+    (both down -> `idle` mode; frees the GPU entirely).
+  - `status`: derive the mode from `systemctl is-active ollama` +
+    `systemctl --user is-active hosaka-server` -> `homo` (hosaka up) | `emo`
+    (ollama up) | `idle` (both down). Both up is an invariant violation (see
+    Modes): logged + re-read, never returned. `gone` is not produced here.
   - Idempotent: already in target mode -> print + exit 0 (matches the current
     `~/bin/homo`/`emo` behaviour).
   - `~/bin/homo` and `~/bin/emo` are rewritten as one-line wrappers
@@ -77,6 +100,7 @@ GPU-free, always-on. Runs under `.venv-dev` (fastapi + httpx, NO torch).
   - `GET  /mode` -> `{"mode": <status>}`
   - `POST /homo` -> run `gpu_mode.sh homo`, return `{"mode": <status>}`
   - `POST /emo`  -> run `gpu_mode.sh emo`,  return `{"mode": <status>}`
+  - `POST /idle` -> run `gpu_mode.sh idle`, return `{"mode": <status>}`
   - Every route requires `Authorization: Bearer $GPU_MODE_TOKEN`
     (defense-in-depth on the tunnel hop; loopback + tunnel is the primary
     boundary). Missing/wrong token -> 401.
@@ -102,18 +126,29 @@ Routes added in `routes_tts.py` (needs `_presence`), on the owner-only
 `protected` router:
 
 - **`GET /api/hosaka/mode`** -> proxy `http://$GPU_MODE_UPSTREAM/mode` with the
-  Bearer token. Home box / tunnel unreachable -> `{"mode": "off"}` (never 500;
-  the UI greys the control).
-- **`POST /api/hosaka/mode {action: "homo"|"emo", force?: bool}`**:
-  - `action == "emo"` and `len(_presence) > 0` and not `force`
-    -> **409 `{"detail": "active_users", "count": n}`** (UI confirms, re-POSTs
-    with `force: true`).
-  - else proxy to `/homo` or `/emo` upstream, return `{"mode": <status>}`.
+  Bearer token. Returns the home service's `homo`/`emo`/`idle`; on proxy failure
+  (timeout / conn refused) returns `{"mode": "gone"}` (never 500; the UI greys
+  the control).
+- **`POST /api/hosaka/mode {action: "homo"|"emo"|"idle", force?: bool}`**:
+  - `action in {"emo","idle"}` (both stop hosaka-server) and `len(_presence) > 0`
+    and not `force` -> **409 `{"detail": "active_users", "count": n}`** (UI
+    confirms, re-POSTs with `force: true`).
+  - else proxy to `/homo` | `/emo` | `/idle` upstream, return `{"mode": <status>}`.
 
-- **UI:** a small mode toggle in the `/hosaka` page header, rendered ONLY when
-  `request.cookies["session"] == SESSION_TOKEN` (full-auth owner). Shows current
-  mode; click flips. `emo` with active users -> confirm dialog ("N users
-  streaming -- flip anyway?") using the 409 count.
+- **UI:** a 3-button segmented control in the `/hosaka` page header, rendered
+  ONLY when `request.cookies["session"] == SESSION_TOKEN` (full-auth owner).
+  Buttons left-to-right: **`emo`  `idle`  `homo`**.
+  - **`gone`:** all three deactivated and grey (no current state to highlight).
+  - **any other mode (`emo`/`idle`/`homo`):** the button matching the current
+    mode = light background, dark text, unclickable (you are here). The other two
+    = transparent background, light outline + light text, clickable (click to
+    POST that `action` and switch).
+  - A click whose `action` stops hosaka-server (`emo` or `idle`) while users are
+    active -> confirm dialog ("N users streaming -- switch anyway?") using the
+    409 count, then re-POST with `force: true`.
+  - On success the returned `{mode}` re-renders which button is the filled/active
+    one. The control polls `GET /api/hosaka/mode` (or refetches after each click)
+    to stay current.
 
 - **New env:** `GPU_MODE_UPSTREAM` (default `172.17.0.1:8124`), `GPU_MODE_TOKEN`
   (shared with the home service; provisioned in the droplet's env/secrets).
@@ -130,17 +165,17 @@ owner browser
            -> gpu_mode.sh emo
               -> systemctl --user stop hosaka-server
               -> sudo systemctl start ollama   (NOPASSWD)
-           -> status -> {"mode":"emet"}
-     <- {"mode":"emet"} -> button updates
+           -> status -> {"mode":"emo"}
+     <- {"mode":"emo"} -> button updates
 ```
-hosaka-server (8123) being down in emet mode is fine -- the toggle lives on
-8124, which stays up across both modes.
+hosaka-server (8123) being down in `emo` mode is fine -- the toggle lives on
+8124, which stays up across all modes.
 
 ## Error handling
 
 | Condition | Behaviour |
 |-----------|-----------|
-| Home box / tunnel down | `GET /mode` -> `{"mode":"off"}`; button disabled, "home box unreachable" |
+| Home box / tunnel down | exec-fn `GET /api/hosaka/mode` -> `{"mode":"gone"}`; button disabled, "GPU unreachable or off" |
 | `gpu_mode.sh` non-zero | 500 + short stderr tail; button shows error, mode re-fetched |
 | `emo` with active users | 409 `{count}`; UI confirm -> re-POST `force:true` |
 | Bad/absent Bearer token | 401 from gpu-mode service |
@@ -157,15 +192,15 @@ hosaka-server (8123) being down in emet mode is fine -- the toggle lives on
 ## Testing
 
 - **gpu-mode app** (`.venv-dev`, pytest): monkeypatch the subprocess runner ->
-  assert `/mode` maps systemctl states to `hosaka|emet|mixed|off`; `/homo`/`/emo`
-  dispatch the right script arg; token gate returns 401 on bad/missing Bearer;
-  subprocess failure surfaces 500. Matches hosaka's pure-logic `.venv-dev`
-  pattern (no GPU import).
+  assert `/mode` maps systemctl states to `homo|emo|idle` (and both-up ->
+  re-read, never returned); `/homo`/`/emo`/`/idle` dispatch the right script arg;
+  token gate returns 401 on bad/missing Bearer; subprocess failure surfaces 500.
+  Matches hosaka's pure-logic `.venv-dev` pattern (no GPU import).
 - **`gpu_mode.sh status`**: testable by stubbing `systemctl` on PATH; the
-  homo/emo branches are integration-only (documented, not unit-tested).
-- **exec-fn route** (pytest): `_presence` non-empty -> 409 with count; `force`
-  bypasses; proxy calls mocked via httpx transport; owner-only dependency
-  rejects no-cookie requests.
+  homo/emo/idle branches are integration-only (documented, not unit-tested).
+- **exec-fn route** (pytest): `action in {emo, idle}` with `_presence` non-empty
+  -> 409 with count; `homo` never guards; `force` bypasses; proxy calls mocked
+  via httpx transport; owner-only dependency rejects no-cookie requests.
 
 ## Out of scope
 
