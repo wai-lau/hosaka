@@ -73,7 +73,32 @@ def test_emo_stops_hosaka_starts_ollama(tmp_path):
     assert _run(tmp_path, bindir, "status").stdout.strip() == "emo"
 
 
+def test_status_mixed(tmp_path):
+    bindir = _fake_bin(tmp_path, ollama="active", hosaka="active")
+    assert _run(tmp_path, bindir, "status").stdout.strip() == "mixed"
+
+
+def test_homo_stops_ollama_starts_hosaka(tmp_path):
+    bindir = _fake_bin(tmp_path, ollama="active", hosaka="inactive")
+    r = _run(tmp_path, bindir, "homo")
+    assert r.returncode == 0
+    log = (tmp_path / "calls.log").read_text()
+    assert "stop ollama" in log
+    assert "start hosaka-server" in log
+    assert _run(tmp_path, bindir, "status").stdout.strip() == "homo"
+
+
 def test_idle_stops_both(tmp_path):
     bindir = _fake_bin(tmp_path, ollama="active", hosaka="active")
-    _run(tmp_path, bindir, "idle")
+    r = _run(tmp_path, bindir, "idle")
+    assert r.returncode == 0
     assert _run(tmp_path, bindir, "status").stdout.strip() == "idle"
+
+
+def test_homo_already_homo_is_noop(tmp_path):
+    bindir = _fake_bin(tmp_path, ollama="inactive", hosaka="active")
+    r = _run(tmp_path, bindir, "homo")
+    assert r.returncode == 0
+    calls_log = tmp_path / "calls.log"
+    assert not calls_log.exists() or calls_log.read_text().strip() == ""
+    assert "already" in r.stdout
