@@ -48,6 +48,13 @@ def test_post_idle_dispatches():
     assert "idle" in runner.calls
 
 
+def test_post_homo_dispatches():
+    runner = FakeRunner(mode="idle")
+    r = _client(runner).post("/homo", headers=AUTH)
+    assert r.json() == {"mode": "homo"}
+    assert "homo" in runner.calls
+
+
 def test_missing_token_is_401():
     assert _client(FakeRunner()).get("/mode").status_code == 401
 

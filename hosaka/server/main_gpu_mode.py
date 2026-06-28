@@ -22,8 +22,12 @@ _SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "gpu_mode.
 def _shell_runner(action: str) -> str:
     """Default runner: run gpu_mode.sh <action>, return current mode.
 
-    Action verbs change state then we re-read `status` so the response always
+    For `status` we run the script once and return directly. For verb actions
+    (homo/emo/idle) we run the verb then re-read `status` so the response
     reflects settled reality, not the verb we asked for."""
+    if action == "status":
+        out = subprocess.run([str(_SCRIPT), "status"], check=True, capture_output=True, text=True)
+        return out.stdout
     subprocess.run([str(_SCRIPT), action], check=True, capture_output=True, text=True)
     out = subprocess.run([str(_SCRIPT), "status"], check=True, capture_output=True, text=True)
     return out.stdout
