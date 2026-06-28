@@ -1,0 +1,21 @@
+[Unit]
+Description=hosaka reverse SSH tunnel (home :8123 + :8124 -> droplet 172.17.0.1)
+After=network-online.target
+Wants=network-online.target
+# Never stop retrying: while the key is unauthorized or the link is down, ssh
+# exits fast; without this systemd would give up after a few quick restarts.
+StartLimitIntervalSec=0
+
+[Service]
+# Two forwards over one tunnel: 8123 = hosaka TTS, 8124 = gpu-mode switch.
+# Config supplies ServerAliveInterval / ExitOnForwardFailure, so a dead link
+# makes ssh exit and systemd reconnect.
+ExecStart=/usr/bin/ssh -NT \
+  -R 172.17.0.1:8123:127.0.0.1:8123 \
+  -R 172.17.0.1:8124:127.0.0.1:8124 \
+  wai-lau-tunnel
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
