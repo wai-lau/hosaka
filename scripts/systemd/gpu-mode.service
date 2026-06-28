@@ -1,0 +1,29 @@
+# Always-on, GPU-free home-box service that arbitrates the GPU between hosaka
+# TTS and ollama. Reverse-tunneled to the droplet alongside hosaka-tunnel.
+#
+# Install (one time):
+#   mkdir -p ~/.config/systemd/user ~/.config/hosaka
+#   printf 'GPU_MODE_TOKEN=%s\n' "$(openssl rand -hex 32)" > ~/.config/hosaka/gpu-mode.env
+#   chmod 600 ~/.config/hosaka/gpu-mode.env
+#   cp scripts/systemd/gpu-mode.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now gpu-mode.service
+#   loginctl enable-linger "$USER"
+#   curl -s -H "Authorization: Bearer $(. ~/.config/hosaka/gpu-mode.env; echo $GPU_MODE_TOKEN)" \
+#        localhost:8124/mode
+[Unit]
+Description=hosaka gpu-mode switch (homo/emo/idle, 127.0.0.1:8124, GPU-free)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/wai/src/hosaka
+# /usr/bin so `systemctl` and `sudo` resolve; gpu_mode.sh needs both.
+Environment=PATH=/usr/bin:/bin
+EnvironmentFile=%h/.config/hosaka/gpu-mode.env
+ExecStart=/home/wai/src/hosaka/scripts/start_gpu_mode.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
