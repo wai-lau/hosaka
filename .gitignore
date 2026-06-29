@@ -7,3 +7,6 @@ __pycache__/
 .pytest_cache/
 *.wav
 !hosaka/sample_voices/*.wav
+
+# archaeology: archived old plans + one-off/migration scripts, kept local only
+/.archaeology/
