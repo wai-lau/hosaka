@@ -11,13 +11,26 @@ from hosaka.normalize import normalize_times
         # 24-hour: the Chatterbox "thirteen thousand" bug.
         ("13:45", "thirteen forty-five"),
         ("at 13:45 sharp", "at thirteen forty-five sharp"),
-        # 12-hour with meridiem (am/pm must survive).
-        ("12:34pm", "twelve thirty-four PM"),
-        ("11:30AM", "eleven thirty AM"),
+        # 12-hour with meridiem (am/pm must survive). Rendered "A.M"/"P.M":
+        # espeak reads a bare "AM" after "one"/"two" as the word "am", and a
+        # trailing dot would be a sentence end for espeak and the chunker.
+        ("12:34pm", "twelve thirty-four P.M"),
+        ("11:30AM", "eleven thirty A.M"),
         # 24h hour + stray meridiem: speak 24h form, drop pm (never verbatim).
         ("13:45pm", "thirteen forty-five"),
-        ("9:05 p.m.", "nine oh five PM"),
-        ("9:05am", "nine oh five AM"),
+        # The writer's own trailing period stays (it may end the sentence).
+        ("9:05 p.m.", "nine oh five P.M."),
+        ("9:05am", "nine oh five A.M"),
+        # Bare hour + meridiem, any spacing / case / dots: "1am" -> "one A.M".
+        ("1am", "one A.M"),
+        ("1AM", "one A.M"),
+        ("1 Am", "one A.M"),
+        ("1 a.m.", "one A.M."),
+        ("1 A.M.", "one A.M."),
+        ("12pm", "twelve P.M"),
+        ("10 PM", "ten P.M"),
+        ("at 7pm sharp", "at seven P.M sharp"),
+        ("back at 1am.", "back at one A.M."),
         # o'clock and oh-minute forms.
         ("13:00", "thirteen o'clock"),
         ("8:00", "eight o'clock"),
@@ -38,6 +51,11 @@ def test_spoken_times(raw, want):
         "24:00",  # hour out of range
         "13:99",  # minute out of range (no match)
         "plain text",
+        "13am",  # bare hour + meridiem only on a 12h clock
+        "0am",
+        "1amp",  # letters run on -> not a meridiem
+        "x1am",  # no word boundary before the hour
+        "team",  # "am" inside a word, no hour
     ],
 )
 def test_non_times_untouched(raw):

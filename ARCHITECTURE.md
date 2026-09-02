@@ -232,8 +232,10 @@ other engines unchanged.
    reserve are atomic (no `await` between them), so they can't both slip past a
    full queue. Only when the queue is full (depth `MAX_QUEUE`) does a request get
    `503`.
-3. Normalize clock times (`hosaka/normalize.py` — `HH:MM`/am-pm → words, so
-   Chatterbox stops reading `13:45` as "thirteen thousand"), apply the
+3. Normalize clock times (`hosaka/normalize.py` — `HH:MM`/am-pm and bare
+   `1am` → words, so Chatterbox stops reading `13:45` as "thirteen thousand";
+   the meridiem is rendered `A.M`/`P.M` because espeak reads `one AM` as the
+   word "am" and a trailing dot is a sentence end), apply the
    custom-pronunciation lexicon (`hosaka/lexicon.py`), then split
    `input` into fragments (`hosaka/chunking.py`). For the Chatterbox path the
    cap **ramps** — fragment `k` is capped at `min(CHATTERBOX_MAX_CHARS,

@@ -12,9 +12,11 @@ set -euo pipefail
 
 DEST_HOST="${HOSAKA_DROPLET:-wai-root@wai-lau.net}"
 
+# wai-root owns /hosaka (plain git pull) but is not in the docker group: docker
+# goes through its passwordless sudo.
 ssh "$DEST_HOST" 'set -e
   cd /hosaka && git pull --ff-only
-  docker build -f Dockerfile.piper -t hosaka-piper:latest .
-  cd /exec-fn && docker compose up -d --force-recreate hosaka-piper
-  printf "hosaka-piper redeployed: %s\n" "$(docker inspect -f "{{.State.Status}}" exec-fn-hosaka-piper-1)"'
+  sudo docker build -f Dockerfile.piper -t hosaka-piper:latest .
+  cd /exec-fn && sudo docker compose up -d --force-recreate hosaka-piper
+  printf "hosaka-piper redeployed: %s\n" "$(sudo docker inspect -f "{{.State.Status}}" exec-fn-hosaka-piper-1)"'
 echo "done"
