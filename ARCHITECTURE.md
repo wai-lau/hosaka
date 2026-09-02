@@ -262,6 +262,20 @@ other engines unchanged.
    thread can't be killed, so the only clean recovery is `_do_shutdown()` (same
    exit path as a fatal CUDA error); systemd respawns clean. This converts the
    old silent infinite hang into a bounded blip + restart.
+7. The slot's **release is leased** to the generator (`_SlotLease`). The route
+   admits + acquires the slot, but `_pcm_frames` releases it in its `finally`,
+   and an async generator's `finally` only exists once its body has started. A
+   client that disconnected while waiting in the queue kills the stream *before*
+   that first step (the WS `start` marker send raises `WebSocketDisconnect`; the
+   HTTP response start fails or is cancelled), which used to leave the slot held
+   with nothing generating: the watchdog only times a *running* generation, so
+   it never fired, every later request queued behind the phantom, and once the
+   queue filled everyone got `503 busy` (the silent wedge of 2026-09-01, ~6h
+   of downtime). Now the generator marks the lease taken as its first statement
+   and the route (`release_if_untaken` in a `finally`; `_LeasedStreamingResponse`
+   for HTTP, since Starlette drives the body after the route returns) gives the
+   slot back itself whenever the generator never ran. The WS loop also closes the
+   generator deterministically (`aclosing`) instead of leaving it to GC.
 
 `WS /v1/audio/stream` is the persistent-session variant for a web client: each
 JSON message (`SpeechRequest` shape) is one utterance; the server replies with a

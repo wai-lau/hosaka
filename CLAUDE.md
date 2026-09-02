@@ -142,6 +142,13 @@ and tested in `.venv-dev` the same way.
   for that long is presumed wedged on an uncancellable GPU call (it would hold
   the slot forever) and triggers `_do_shutdown()` so systemd respawns clean.
   Do not remove it — the silent slot wedge under sustained load is what it cures.
+  The watchdog only sees a *running* generation, so the slot's release is
+  leased (`_SlotLease`): `_pcm_frames` releases in its `finally`, but if the
+  generator never starts (client disconnected while queued -> the WS `start`
+  send / HTTP response start fails before the first step) the route releases
+  it itself. Without that the slot leaked silently until `503 busy` for everyone
+  (2026-09-01). Keep `lease.take()` as the generator's first statement and
+  `release_if_untaken` on every route exit path.
 - Personal voice data lives in `~/.local/share/hosaka/voices` (untracked).
   Only the couple of sample seeds under `hosaka/sample_voices/` are committed.
 - Piper character voices are pretrained `.onnx` models under

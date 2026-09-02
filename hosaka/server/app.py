@@ -2,7 +2,7 @@ import asyncio
 import os
 import signal
 import subprocess
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -108,13 +108,69 @@ def _fragments_for(backend: str, text: str) -> list[str]:
     return split_fragments(text)
 
 
-async def _pcm_frames(engine, voice, params, fragments, gpu_queue):
+class _SlotLease:
+    """Ownership handoff of the admitted GPU slot from a route to _pcm_frames.
+
+    The route admits + acquires the slot; _pcm_frames releases it in its
+    finally. But an async generator's finally only exists once its body has
+    started, and a client that disconnected while waiting in the queue kills
+    the stream *before* that first step: the WS "start" marker send raises
+    WebSocketDisconnect (uvicorn's ClientDisconnected -> Starlette), or the
+    HTTP response start fails / is cancelled. Nothing then releases the slot:
+    it stays held with nothing generating, the watchdog (which only times a
+    running generation) never fires, every later request queues behind the
+    phantom, and once the queue fills everyone gets 503 busy. That was the
+    silent wedge of 2026-09-01.
+
+    The generator marks the lease ``taken`` as its very first statement; the
+    route calls ``release_if_untaken`` on every exit path and gives the slot
+    back itself when the generator never ran. Both run on the event loop, so
+    there is no race and no double release.
+    """
+
+    __slots__ = ("_gpu_queue", "taken")
+
+    def __init__(self, gpu_queue):
+        self._gpu_queue = gpu_queue
+        self.taken = False
+
+    def take(self) -> None:
+        self.taken = True
+
+    def release_if_untaken(self) -> None:
+        if not self.taken:
+            self.taken = True
+            self._gpu_queue.release()
+
+
+class _LeasedStreamingResponse(StreamingResponse):
+    """StreamingResponse that gives the GPU slot back if the body never ran.
+
+    Starlette drives the body iterator after the route has returned, so a
+    disconnect that lands before the first chunk (see _SlotLease) is only
+    visible here, once the response's own __call__ has finished."""
+
+    def __init__(self, *args, lease: _SlotLease, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._lease = lease
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._lease.release_if_untaken()
+
+
+async def _pcm_frames(engine, voice, params, fragments, gpu_queue, lease: _SlotLease):
     """Stream PCM byte chunks for the fragments, holding the single GPU slot for
     the whole stream and releasing it (in finally) once the worker thread is
     done -- even on cancellation / client disconnect. The caller must have
-    already admitted + acquired the slot. Exits the process on a fatal CUDA
+    already admitted + acquired the slot; taking the lease first thing tells
+    the caller this generator now owns the release (a body that never starts
+    has no finally -- see _SlotLease). Exits the process on a fatal CUDA
     error. Shared by the HTTP and WebSocket routes.
     """
+    lease.take()
     loop = asyncio.get_running_loop()
     try:
         for frag in fragments:
@@ -214,6 +270,10 @@ class _GpuQueue:
         self._slot.release()
         self._depth -= 1
 
+    @property
+    def depth(self) -> int:
+        return self._depth
+
 
 def create_app(
     registry: EngineRegistry,
@@ -234,6 +294,7 @@ def create_app(
     app.state.library = library
 
     gpu_queue = _GpuQueue(max_queue)
+    app.state.gpu_queue = gpu_queue  # observable for tests / diagnostics
     lexicon = Lexicon(LEXICON_PATH)
 
     @app.get("/health")
@@ -322,10 +383,17 @@ def create_app(
             raise HTTPException(status_code=503, detail="busy")
 
         await _admit_or(busy)
-        params = clamp_params(req.params).model_dump()
-        fragments = _fragments_for(req.backend, lexicon.apply(normalize_times(req.input)))
-        return StreamingResponse(
-            _pcm_frames(engine, req.voice, params, fragments, gpu_queue),
+        lease = _SlotLease(gpu_queue)
+        try:
+            params = clamp_params(req.params).model_dump()
+            fragments = _fragments_for(req.backend, lexicon.apply(normalize_times(req.input)))
+            body = _pcm_frames(engine, req.voice, params, fragments, gpu_queue, lease)
+        except BaseException:
+            lease.release_if_untaken()
+            raise
+        return _LeasedStreamingResponse(
+            body,
+            lease=lease,
             media_type="application/octet-stream",
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
         )
@@ -359,12 +427,26 @@ def create_app(
 
                 if not await _admit_or(busy):
                     continue
-                params = clamp_params(req.params).model_dump()
-                fragments = _fragments_for(req.backend, lexicon.apply(normalize_times(req.input)))
-                await ws.send_json({"type": "start"})
-                async for chunk in _pcm_frames(engine, req.voice, params, fragments, gpu_queue):
-                    await ws.send_bytes(chunk)
-                await ws.send_json({"type": "end"})
+                lease = _SlotLease(gpu_queue)
+                try:
+                    params = clamp_params(req.params).model_dump()
+                    fragments = _fragments_for(
+                        req.backend, lexicon.apply(normalize_times(req.input))
+                    )
+                    # A client that left while queued fails right here (the
+                    # send raises WebSocketDisconnect), before the generator
+                    # ever runs -- the lease's finally below gives the slot back.
+                    await ws.send_json({"type": "start"})
+                    # aclosing: close the generator deterministically on a
+                    # mid-stream disconnect instead of leaving it to GC.
+                    async with aclosing(
+                        _pcm_frames(engine, req.voice, params, fragments, gpu_queue, lease)
+                    ) as frames:
+                        async for chunk in frames:
+                            await ws.send_bytes(chunk)
+                    await ws.send_json({"type": "end"})
+                finally:
+                    lease.release_if_untaken()
         except WebSocketDisconnect:
             pass
 

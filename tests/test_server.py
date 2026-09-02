@@ -6,6 +6,7 @@ import httpx
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import ClientDisconnect
 
 from hosaka.library import VoiceLibrary
 from hosaka.server.app import create_app
@@ -382,6 +383,134 @@ def test_queue_cap_returns_503_when_full(tmp_path):
             ra, rb = await asyncio.gather(a, b)
             assert ra.status_code == 200
             assert rb.status_code == 200
+
+    asyncio.run(scenario())
+
+
+def _asgi_receive(messages):
+    """ASGI receive() over a fixed script; once drained, keeps reporting the
+    client as gone (what uvicorn does after the peer closed)."""
+    q = list(messages)
+
+    async def receive():
+        if q:
+            return q.pop(0)
+        return {"type": "websocket.disconnect", "code": 1006}
+
+    return receive
+
+
+def test_ws_client_gone_while_queued_releases_slot(tmp_path):
+    # A WS client sends an utterance, waits in the queue behind a long
+    # generation, then closes the tab. When the slot frees, the "start" marker
+    # send fails (uvicorn raises ClientDisconnected, an OSError, which Starlette
+    # turns into WebSocketDisconnect) BEFORE the PCM generator is ever iterated,
+    # so its finally-release never runs. The slot must still be given back:
+    # a later request has to run, not hang behind a phantom (the 2026-09-01
+    # silent wedge: nothing generating, watchdog blind, 503 busy once the queue
+    # filled).
+    eng = GatedEngine()
+    reg = EngineRegistry(kokoro=eng, chatterbox=eng)
+    app = create_app(reg, VoiceLibrary(tmp_path / "v"), do_warmup=False)
+    gone = asyncio.Event()
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+        if msg["type"] == "websocket.send" and gone.is_set():
+            raise OSError("client disconnected")
+
+    scope = {
+        "type": "websocket",
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "scheme": "ws",
+        "path": "/v1/audio/stream",
+        "raw_path": b"/v1/audio/stream",
+        "root_path": "",
+        "query_string": b"",
+        "headers": [],
+        "client": ("127.0.0.1", 1),
+        "server": ("127.0.0.1", 8123),
+        "subprotocols": [],
+    }
+    receive = _asgi_receive(
+        [
+            {"type": "websocket.connect"},
+            {"type": "websocket.receive", "text": json.dumps(KOKORO_REQ)},
+        ]
+    )
+
+    async def scenario():
+        async with _async_client(app) as ac:
+            a = asyncio.create_task(ac.post("/v1/audio/speech", json=KOKORO_REQ))
+            await _wait(eng.entered)  # A holds the slot
+            b = asyncio.create_task(app(scope, receive, send))
+            await asyncio.sleep(0.2)  # B is admitted and waiting on the slot
+            gone.set()  # ...and its client leaves
+            eng.gate.set()
+            assert (await a).status_code == 200
+            await b  # B: start send fails, handler exits quietly
+            assert not any(m["type"] == "websocket.send" and m.get("bytes") for m in sent)
+
+            assert app.state.gpu_queue.depth == 0
+            c = await asyncio.wait_for(ac.post("/v1/audio/speech", json=KOKORO_REQ), 3)
+            assert c.status_code == 200
+
+    asyncio.run(scenario())
+
+
+def test_http_client_gone_while_queued_releases_slot(tmp_path):
+    # Same leak shape on the HTTP route: the client disconnects while queued,
+    # and once the slot frees the very first send (response start) fails with
+    # OSError, which Starlette (ASGI spec >= 2.4 branch) turns into
+    # ClientDisconnect -- before the PCM generator's first step, so its
+    # finally-release never runs. The slot must still come back.
+    eng = GatedEngine()
+    reg = EngineRegistry(kokoro=eng, chatterbox=eng)
+    app = create_app(reg, VoiceLibrary(tmp_path / "v"), do_warmup=False)
+    body = json.dumps(KOKORO_REQ).encode()
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/v1/audio/speech",
+        "raw_path": b"/v1/audio/speech",
+        "root_path": "",
+        "query_string": b"",
+        "headers": [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+        ],
+        "client": ("127.0.0.1", 1),
+        "server": ("127.0.0.1", 8123),
+    }
+    q = [{"type": "http.request", "body": body, "more_body": False}]
+
+    async def receive():
+        if q:
+            return q.pop(0)
+        return {"type": "http.disconnect"}
+
+    async def send(msg):
+        raise OSError("client disconnected")  # peer already closed
+
+    async def scenario():
+        async with _async_client(app) as ac:
+            a = asyncio.create_task(ac.post("/v1/audio/speech", json=KOKORO_REQ))
+            await _wait(eng.entered)
+            b = asyncio.create_task(app(scope, receive, send))
+            await asyncio.sleep(0.2)  # B queued; its client is already gone
+            eng.gate.set()
+            assert (await a).status_code == 200
+            with pytest.raises(ClientDisconnect):  # surfaces out of the app
+                await b
+
+            assert app.state.gpu_queue.depth == 0
+            c = await asyncio.wait_for(ac.post("/v1/audio/speech", json=KOKORO_REQ), 3)
+            assert c.status_code == 200
 
     asyncio.run(scenario())
 
