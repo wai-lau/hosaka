@@ -330,6 +330,33 @@ request is not a cold start. Models stay pinned for the session. Warmup also
 spawns the Piper sidecar and warms each character voice (loaded into RAM, not
 VRAM), so its first request is warm too.
 
+### Two-card placement
+
+The home box has two GPUs: the RTX 5070 Ti (sm_120, 16 GB) and a GTX 1660
+(sm_75, 6 GB). `ENGINE_GPU` in `config.py` pins each engine to a card by NVIDIA
+UUID, never by index -- torch numbers cards fastest-first, nvidia-smi in PCI
+order, so the same index names different cards. `hosaka/gpu.py` maps a UUID to
+`cuda:N` for the in-process engines (Kokoro, Chatterbox take a `device` arg);
+the RVC sidecar gets `CUDA_VISIBLE_DEVICES=<uuid>` in its env, so its `cuda:0`
+is that card. A UUID the box lacks falls back to the default card with a
+warning (and the sidecar is then left unpinned).
+
+The split is per engine, never one model across cards: Chatterbox's
+autoregressive T3 would cross PCIe every token. Chatterbox (89% of Charlie's
+time) stays on the 5070 Ti; Kokoro and RVC go to the 1660, freeing ~2 GB on the
+big card. Measured 2026-11-09 (live server sharing the 5070 Ti):
+
+| Measure | all on 5070 Ti | Kokoro + RVC on 1660 |
+|---|---|---|
+| Kokoro first chunk | 0.27 s | 0.34 s |
+| Kokoro+RVC RTF (warm, 4.2 s clip) | 0.31 | 0.28 |
+| 1660 VRAM used | 0.1 GB | 2.2 GB (Kokoro ~0.9, RVC ~1.1) |
+
+Torch cu128 ships sm_75 kernels, so both `.venv-server` and `.venv-rvc` run on
+the 1660 as-is. Cross-engine audio moves as numpy over the pipe, so no tensor
+ever crosses devices. All GPU work still serializes through the one admission
+slot.
+
 ## Running it / startup
 
 `scripts/start_server.sh` is the canonical launcher (uvicorn on
@@ -439,6 +466,7 @@ recipes.
 | `hosaka/audio.py` | playback players (ffplay / pacat / winsound) + `make_player` selection |
 | `hosaka/server/app.py` | FastAPI app: lifespan, routes, GPU serialization |
 | `hosaka/server/main.py` | wires engines + library into the app (uvicorn entry) |
+| `hosaka/gpu.py` | per-engine GPU placement: NVIDIA UUID -> `cuda:N` (torch imported lazily) |
 | `hosaka/server/engines/base.py` | `Engine` protocol + `EngineRegistry` |
 | `hosaka/server/engines/kokoro_engine.py` | Kokoro presets engine |
 | `hosaka/server/engines/chatterbox_engine.py` | Chatterbox cloning (quality mode) |

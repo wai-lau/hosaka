@@ -157,6 +157,17 @@ RVC_DIR = DATA_DIR / "rvc"
 RVC_HUBERT = RVC_DIR / "hubert_base.pt"  # ContentVec/HuBERT feature encoder
 RVC_RMVPE = RVC_DIR / "rmvpe.pt"  # F0 (pitch) estimator
 
+# Per-engine GPU placement on the two-card home box. Values are NVIDIA UUIDs
+# ("GPU-..."), never indexes: torch numbers cards fastest-first while nvidia-smi
+# uses PCI order, so the same index means different cards. List them with
+# `nvidia-smi -L`. None = torch's default "cuda" card. A UUID the box doesn't
+# have falls back to the default card with a warning (see hosaka/gpu.py).
+# Chatterbox (89% of Charlie's time, autoregressive) stays on the fast card;
+# Kokoro (82M) and the RVC sidecar fit the small one and free ~2-3 GB there.
+GPU_5070TI = "GPU-3772ace9-158c-1130-cc88-f09cacf35b27"  # sm_120, 16 GB
+GPU_1660 = "GPU-58cfdb6c-f7da-5d61-c081-73c6f81984cd"  # sm_75, 6 GB
+ENGINE_GPU = {"chatterbox": GPU_5070TI, "kokoro": GPU_1660, "rvc": GPU_1660}
+
 # Kokoro voice ids encode (accent, gender) by prefix: a/b = American/British,
 # f/m = female/male. A character's source must be the right gender + accent, but
 # WHICH voice -- its energy/timbre -- is the character's match (see

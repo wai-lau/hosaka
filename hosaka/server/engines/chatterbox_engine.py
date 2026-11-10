@@ -19,9 +19,9 @@ class ChatterboxEngine:
     (exaggeration / cfg_weight / temperature).
     """
 
-    def __init__(self, library: VoiceLibrary):
+    def __init__(self, library: VoiceLibrary, device: str = "cuda"):
         self.library = library
-        self.model = ChatterboxTTS.from_pretrained(device="cuda")
+        self.model = ChatterboxTTS.from_pretrained(device=device)
         self.sr = int(self.model.sr)
 
     def warmup(self) -> None:

@@ -1,4 +1,5 @@
 import atexit
+import os
 import subprocess
 
 import numpy as np
@@ -38,6 +39,7 @@ class RvcEngine:
         cwd=None,
         stderr=None,
         source_cache=None,
+        gpu=None,
     ):
         # sources: {backend -> Engine} (e.g. {"kokoro": ..., "chatterbox": ...}).
         # Each RVC voice picks which engine generates its source audio.
@@ -49,6 +51,11 @@ class RvcEngine:
         self._cwd = cwd
         self._stderr = stderr
         self._proc = None
+        # gpu: an NVIDIA UUID to pin the sidecar to (via CUDA_VISIBLE_DEVICES, so
+        # its hardcoded cuda:0 is that card). None inherits the server's env.
+        self._env = None
+        if gpu:
+            self._env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu)}
         # Cache the expensive source-gen (the 89% stage) so live :speed / RVC-knob
         # re-tunes -- which don't change the source -- skip it. Injected by the
         # server (a disk-backed SourceCache); None disables caching (PcmCache(0)).
@@ -63,6 +70,7 @@ class RvcEngine:
                 stdout=subprocess.PIPE,
                 stderr=self._stderr,
                 cwd=self._cwd,
+                env=self._env,
                 bufsize=0,
             )
         return self._proc

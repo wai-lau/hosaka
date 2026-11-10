@@ -126,6 +126,11 @@ and tested in `.venv-dev` the same way.
   (T3 is overhead-bound, no gain; full cast crashes the s3tokenizer FFT). A lone
   RTF ~2.0 reading means the GPU is degrading toward a crash — re-measure after a
   clean restart, don't "fix" the model.
+- **Two GPUs: place engines by UUID, never index.** `ENGINE_GPU` in
+  `config.py` puts Chatterbox on the 5070 Ti and Kokoro + the RVC sidecar on the
+  GTX 1660 (sm_75, 6 GB). torch (fastest-first) and nvidia-smi (PCI order)
+  number the cards oppositely. Split per engine only -- never one model across
+  cards. See `### Two-card placement` in ARCHITECTURE.md.
 
 ## Conventions
 

@@ -1,5 +1,6 @@
 from hosaka.cache import SourceCache
 from hosaka.config import (
+    ENGINE_GPU,
     PIPER_PYTHON,
     PIPER_SIDECAR,
     PIPER_VOICES,
@@ -16,6 +17,7 @@ from hosaka.config import (
     VOICE_DIR,
     resolve_source,
 )
+from hosaka.gpu import cuda_device, present_uuid
 from hosaka.library import VoiceLibrary
 from hosaka.server.app import create_app
 from hosaka.server.engines.base import EngineRegistry
@@ -76,12 +78,19 @@ def _make_rvc(sources):
         SOURCE_CACHE_DISK_BYTES,
         SOURCE_CACHE_VERSION,
     )
-    return RvcEngine(sources, cmd, voices=voices, knobs=dict(RVC_KNOBS), source_cache=cache)
+    return RvcEngine(
+        sources,
+        cmd,
+        voices=voices,
+        knobs=dict(RVC_KNOBS),
+        source_cache=cache,
+        gpu=present_uuid(ENGINE_GPU.get("rvc")),
+    )
 
 
 _library = VoiceLibrary(VOICE_DIR)
-_kokoro = KokoroEngine()
-_chatterbox = ChatterboxEngine(_library)
+_kokoro = KokoroEngine(device=cuda_device(ENGINE_GPU.get("kokoro")))
+_chatterbox = ChatterboxEngine(_library, device=cuda_device(ENGINE_GPU.get("chatterbox")))
 _registry = EngineRegistry(
     kokoro=_kokoro,
     chatterbox=_chatterbox,

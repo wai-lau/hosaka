@@ -7,8 +7,8 @@ from hosaka.config import KOKORO_ALIASES, KOKORO_WARMUP_VOICE
 class KokoroEngine:
     """Kokoro-82M. Presets + speed. 24 kHz mono output."""
 
-    def __init__(self, lang_code: str = "a"):  # 'a' = American English
-        self._pipe = KPipeline(lang_code=lang_code)
+    def __init__(self, lang_code: str = "a", device: str = "cuda"):  # 'a' = American
+        self._pipe = KPipeline(lang_code=lang_code, device=device)
 
     def warmup(self) -> None:
         for _ in self.stream("warm up.", KOKORO_WARMUP_VOICE, {"speed": 1.0}):

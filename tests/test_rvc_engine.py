@@ -194,3 +194,36 @@ def test_warmup_does_not_raise():
     )
     eng.warmup()
     eng.close()
+
+
+def test_gpu_pins_sidecar_via_cuda_visible_devices(monkeypatch):
+    seen = {}
+    real = __import__("subprocess").Popen
+
+    def spy(cmd, **kw):
+        seen["env"] = kw.get("env")
+        return real(cmd, **kw)
+
+    monkeypatch.setattr("hosaka.server.engines.rvc_engine.subprocess.Popen", spy)
+    eng = RvcEngine(
+        {"kokoro": FakeSource()}, FAKE, voices=_voices(), knobs=dict(KNOBS), gpu="GPU-abc"
+    )
+    list(eng.stream("hi", "charlie", {}))
+    eng.close()
+    assert seen["env"]["CUDA_VISIBLE_DEVICES"] == "GPU-abc"
+    assert "PATH" in seen["env"]  # inherits the rest of the env
+
+
+def test_no_gpu_inherits_env(monkeypatch):
+    seen = {}
+    real = __import__("subprocess").Popen
+
+    def spy(cmd, **kw):
+        seen["env"] = kw.get("env")
+        return real(cmd, **kw)
+
+    monkeypatch.setattr("hosaka.server.engines.rvc_engine.subprocess.Popen", spy)
+    eng = _engine()
+    list(eng.stream("hi", "charlie", {}))
+    eng.close()
+    assert seen["env"] is None
