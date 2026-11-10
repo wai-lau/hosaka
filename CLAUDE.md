@@ -127,8 +127,10 @@ and tested in `.venv-dev` the same way.
   RTF ~2.0 reading means the GPU is degrading toward a crash — re-measure after a
   clean restart, don't "fix" the model.
 - **Two GPUs: place engines by UUID, never index.** `ENGINE_GPU` in
-  `config.py` puts Chatterbox on the 5070 Ti and Kokoro + the RVC sidecar on the
-  GTX 1660 (sm_75, 6 GB). torch (fastest-first) and nvidia-smi (PCI order)
+  `config.py` puts Chatterbox + the RVC sidecar (all of Charlie) on the 5070 Ti
+  and Kokoro (nicole) on the GTX 1660 (sm_75, 6 GB). A slow Charlie is CPU
+  contention first (T3 is launch-bound) -- check `uptime`/`top` before blaming
+  placement. torch (fastest-first) and nvidia-smi (PCI order)
   number the cards oppositely. Split per engine only -- never one model across
   cards. See `### Two-card placement` in ARCHITECTURE.md.
 

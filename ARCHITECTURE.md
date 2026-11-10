@@ -343,14 +343,21 @@ warning (and the sidecar is then left unpinned).
 
 The split is per engine, never one model across cards: Chatterbox's
 autoregressive T3 would cross PCIe every token. Chatterbox (89% of Charlie's
-time) stays on the 5070 Ti; Kokoro and RVC go to the 1660, freeing ~2 GB on the
-big card. Measured 2026-11-09 (live server sharing the 5070 Ti):
+time) stays on the 5070 Ti and Kokoro (nicole) goes to the 1660. RVC measured
+fine on the 1660 too, but Charlie is kept whole on the fast card (owner call,
+2026-11-09); flip `ENGINE_GPU["rvc"]` to move it. Measured 2026-11-09 (live
+server sharing the 5070 Ti):
 
 | Measure | all on 5070 Ti | Kokoro + RVC on 1660 |
 |---|---|---|
 | Kokoro first chunk | 0.27 s | 0.34 s |
 | Kokoro+RVC RTF (warm, 4.2 s clip) | 0.31 | 0.28 |
 | 1660 VRAM used | 0.1 GB | 2.2 GB (Kokoro ~0.9, RVC ~1.1) |
+
+Placement does not move Chatterbox's RTF: with another process saturating the
+CPU (load 24 on 12 cores), Chatterbox ran at RTF ~2.6-3.0 with or without the
+split. Its tiny autoregressive steps are CPU-launch-bound (~9% GPU util), so a
+busy CPU, not the card, is the first suspect for a slow Charlie.
 
 Torch cu128 ships sm_75 kernels, so both `.venv-server` and `.venv-rvc` run on
 the 1660 as-is. Cross-engine audio moves as numpy over the pipe, so no tensor
