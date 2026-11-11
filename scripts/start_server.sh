@@ -12,5 +12,8 @@
 # Restart=on-failure handling.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# shellcheck source=qwen_lock.sh
+. scripts/qwen_lock.sh
+refuse_if_qwen_holds_gpu || exit 1
 exec .venv-server/bin/python -m uvicorn hosaka.server.main:app \
   --host 127.0.0.1 --port 8123
