@@ -162,6 +162,8 @@ and tested in `.venv-dev` the same way.
   `~/.local/share/hosaka/piper/<voice>/` (untracked); the sidecar resamples them
   22.05k->24k. Missing model/venv degrades gracefully (engine simply not built).
   Piper is CPU but for now still routes through the GPU admission queue.
+- `start_server.sh` sets `HF_HUB_OFFLINE=1`: online, Kokoro's hub checks add
+  ~80 s to every start. Fetch a new HF model with `HF_HUB_OFFLINE=0` once.
 - The server runs persistently as the systemd user unit `hosaka-server.service`
   (execs `scripts/start_server.sh`), linger-enabled so it starts on WSL boot.
   Bound to `127.0.0.1:8123`. The REPL defers to this unit when installed —
