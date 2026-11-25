@@ -384,14 +384,31 @@ the home-box GPU between the TTS server and ollama by shelling out to
 `GET /mode` returns `{"mode": "homo"|"emo"|"idle"}`, and `POST /homo|/emo|/idle`
 transitions to that mode. All routes require `Authorization: Bearer $GPU_MODE_TOKEN`.
 
-Four modes (XOR, computed by this service except `gone`):
+hosaka-server runs in **every** mode with nicole (Kokoro, GTX 1660) and GLaDOS
+(Piper, CPU), so the reader voice is always on. The mode only decides who gets
+the 5070 Ti: Charlie (Chatterbox + the RVC sidecar) or ollama. Four modes
+(computed by this service except `gone`):
 
 | Mode | Meaning |
 |------|---------|
-| `homo` | hosaka-server up, ollama down -- TTS holds the GPU |
-| `emo`  | ollama up, hosaka-server down -- LLM holds the GPU |
-| `idle` | both services down, home service reachable |
+| `homo` | Charlie loaded, ollama down |
+| `emo`  | ollama up, Charlie not loaded (nicole + GLaDOS still serve) |
+| `idle` | ollama down, Charlie not loaded (nicole + GLaDOS still serve) |
+| `mixed`| invariant violation: Charlie and ollama both up |
 | `gone` | exec-fn cannot reach the home service (exec-fn label only; never returned by this service) |
+
+The server picks its engines once, at startup, from the state file
+`$XDG_STATE_HOME/hosaka/charlie` (`on`/`off`; missing = off), read by
+`hosaka/charlie_state.py` (env `HOSAKA_CHARLIE=1|0` overrides for a one-off
+run). `gpu_mode.sh` writes the file and restarts hosaka-server, so a switch into
+or out of homo blips nicole for one server start; emo <-> idle leaves the server
+alone. Loading and freeing Chatterbox in-process was rejected: torch keeps
+freed VRAM cached and the GPU queue/watchdog would have to drain around it. A
+nicole-only server skips the startup `ollama stop` (only Charlie contends with
+the LLM), and a Charlie request answers 400 `backend unavailable: rvc (Charlie
+loads only in GPU mode homo)`. While Qwen holds the GPUs (`qwen_lock.sh`),
+`homo` is refused and emo/idle only write the file; `qwen stop` starts
+hosaka-server, which reads it.
 
 The service runs as the systemd user unit `gpu-mode.service` (tracked under
 `scripts/systemd/`), linger-enabled alongside `hosaka-server.service`. The
@@ -403,8 +420,8 @@ thin wrappers `~/bin/homo` and `~/bin/emo` call `scripts/gpu_mode.sh` directly
 from the shell. On the exec-fn droplet, the owner-only `/api/hosaka/mode`
 endpoint (protected router) proxies this service over the tunnel, and the
 `/hosaka` page shows an `emo|idle|homo` segmented control visible to owners only;
-`emo` and `idle` (which stop hosaka-server) confirm against the connected-user
-count before acting.
+`emo` and `idle` (which restart hosaka-server when leaving homo) confirm against
+the connected-user count before acting.
 
 ## Remote / web access
 

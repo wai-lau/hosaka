@@ -62,6 +62,12 @@ def _is_fatal_cuda(exc: BaseException) -> bool:
     return "CUDA error" in s or "device-side assert" in s
 
 
+_BACKENDS = ("kokoro", "chatterbox", "piper", "rvc")
+# Chatterbox + RVC are Charlie's engines: the server builds them only in GPU mode
+# homo (hosaka/charlie_state.py), so their absence has a fix the user can reach.
+_CHARLIE_BACKENDS = ("chatterbox", "rvc")
+
+
 def _resolve(registry: EngineRegistry, library: VoiceLibrary, backend: str, voice: str):
     """Resolve the engine for (backend, voice), or return (None, error string).
 
@@ -70,11 +76,15 @@ def _resolve(registry: EngineRegistry, library: VoiceLibrary, backend: str, voic
     apart from a crash. Reject it cleanly up front instead. Shared by the HTTP
     and WebSocket routes.
     """
+    if backend not in _BACKENDS:
+        return None, f"unknown backend: {backend}"
     try:
         engine = registry.get(backend)
     except KeyError:
-        return None, f"unknown backend: {backend}"
+        engine = None
     if engine is None:
+        if backend in _CHARLIE_BACKENDS:
+            return None, f"backend unavailable: {backend} (Charlie loads only in GPU mode homo)"
         return None, f"backend unavailable: {backend}"
     if backend == "kokoro":
         if voice not in KOKORO_PRESETS:
@@ -285,7 +295,10 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if do_warmup:
-            stop_llm()
+            # Only Charlie contends with ollama for the 5070 Ti; nicole-only
+            # (emo/idle) must leave a running LLM alone.
+            if registry.chatterbox is not None or registry.rvc is not None:
+                stop_llm()
             registry.warmup_all()
         yield
 

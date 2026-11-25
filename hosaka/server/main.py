@@ -1,3 +1,4 @@
+from hosaka import charlie_state
 from hosaka.cache import SourceCache
 from hosaka.config import (
     ENGINE_GPU,
@@ -90,11 +91,18 @@ def _make_rvc(sources):
 
 _library = VoiceLibrary(VOICE_DIR)
 _kokoro = KokoroEngine(device=cuda_device(ENGINE_GPU.get("kokoro")))
-_chatterbox = ChatterboxEngine(_library, device=cuda_device(ENGINE_GPU.get("chatterbox")))
+# nicole + GLaDOS load in every GPU mode; Charlie (Chatterbox + RVC, the whole
+# 5070 Ti) only when gpu_mode.sh set homo -- see hosaka/charlie_state.py.
+_charlie = charlie_state.wanted()
+_chatterbox = (
+    ChatterboxEngine(_library, device=cuda_device(ENGINE_GPU.get("chatterbox")))
+    if _charlie
+    else None
+)
 _registry = EngineRegistry(
     kokoro=_kokoro,
     chatterbox=_chatterbox,
     piper=_make_piper(),
-    rvc=_make_rvc({"kokoro": _kokoro, "chatterbox": _chatterbox}),
+    rvc=_make_rvc({"kokoro": _kokoro, "chatterbox": _chatterbox}) if _charlie else None,
 )
 app = create_app(_registry, _library, do_warmup=True)

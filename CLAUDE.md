@@ -172,8 +172,12 @@ and tested in `.venv-dev` the same way.
   For remote use it is reverse-proxied by the exec-fn app — see ARCHITECTURE.md.
 - A second always-on user unit `gpu-mode.service` (tracked under `scripts/systemd/`)
   runs `hosaka/server/main_gpu_mode.py` under `.venv-dev` on `127.0.0.1:8124`.
-  It is GPU-free and torch-free. It arbitrates the home-box GPU between
-  hosaka-server and ollama by shelling to `scripts/gpu_mode.sh`; `~/bin/homo`
+  It is GPU-free and torch-free. It arbitrates the 5070 Ti between Charlie and
+  ollama by shelling to `scripts/gpu_mode.sh`. **nicole is always on:**
+  hosaka-server runs in every mode with nicole + GLaDOS; only homo loads Charlie
+  (Chatterbox + RVC), chosen at server start from `$XDG_STATE_HOME/hosaka/charlie`
+  (`hosaka/charlie_state.py`), so a switch in or out of homo restarts the server.
+  Never build Chatterbox at import unconditionally again. `~/bin/homo`
   and `~/bin/emo` are thin wrappers over that script. Ollama is a system unit,
   so `deploy/gpu-mode.sudoers` grants NOPASSWD for exactly `systemctl start/stop
   ollama` (nothing wider). The `hosaka-tunnel.service` reverse-forwards port
