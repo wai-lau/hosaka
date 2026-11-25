@@ -18,7 +18,7 @@ class FakeRunner:
         if action == "status":
             return self.mode
         # action verbs settle into the matching mode
-        self.mode = {"homo": "homo", "emo": "emo", "idle": "idle"}[action]
+        self.mode = {"homo": "homo", "lomo": "lomo", "emo": "emo", "idle": "idle"}[action]
         return self.mode
 
 
@@ -78,3 +78,22 @@ def test_mixed_is_repaired_to_idle_label():
 
     assert parse_mode("mixed") == "idle"
     assert parse_mode("homo") == "homo"
+
+
+def test_post_lomo_dispatches_and_returns_mode():
+    runner = FakeRunner(mode="homo")
+    r = _client(runner).post("/lomo", headers=AUTH)
+    assert r.status_code == 200
+    assert r.json() == {"mode": "lomo"}
+    assert "lomo" in runner.calls
+
+
+def test_post_lomo_requires_token():
+    r = _client(FakeRunner()).post("/lomo")
+    assert r.status_code == 401
+
+
+def test_lomo_status_is_displayed():
+    from hosaka.gpu_mode import parse_mode
+
+    assert parse_mode("lomo\n") == "lomo"

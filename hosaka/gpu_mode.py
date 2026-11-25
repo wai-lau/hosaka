@@ -1,8 +1,8 @@
 """Pure mode helpers for the gpu-mode service. No I/O, no torch -- safe to
 import under .venv-dev."""
 
-VALID_ACTIONS = ("homo", "emo", "idle")
-_DISPLAY = {"homo": "homo", "emo": "emo", "idle": "idle"}
+VALID_ACTIONS = ("homo", "lomo", "emo", "idle")
+_DISPLAY = {a: a for a in VALID_ACTIONS}
 
 
 def parse_mode(raw: str) -> str:

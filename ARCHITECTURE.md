@@ -381,17 +381,18 @@ A second always-on service (`hosaka/server/main_gpu_mode.py`) runs under
 `.venv-dev` on `127.0.0.1:8124`. It is GPU-free and torch-free; it arbitrates
 the home-box GPU between the TTS server and ollama by shelling out to
 `scripts/gpu_mode.sh` (systemctl start/stop of the two services). Routes:
-`GET /mode` returns `{"mode": "homo"|"emo"|"idle"}`, and `POST /homo|/emo|/idle`
+`GET /mode` returns `{"mode": "homo"|"lomo"|"emo"|"idle"}`, and `POST /homo|/lomo|/emo|/idle`
 transitions to that mode. All routes require `Authorization: Bearer $GPU_MODE_TOKEN`.
 
 hosaka-server runs in **every** mode with nicole (Kokoro, GTX 1660) and GLaDOS
 (Piper, CPU), so the reader voice is always on. The mode only decides who gets
-the 5070 Ti: Charlie (Chatterbox + the RVC sidecar) or ollama. Four modes
+the 5070 Ti: Charlie (Chatterbox + the RVC sidecar) or ollama. The modes
 (computed by this service except `gone`):
 
 | Mode | Meaning |
 |------|---------|
 | `homo` | Charlie loaded, ollama down |
+| `lomo` | Charlie not loaded, ollama left as it was (box busy with other work; nicole + GLaDOS serve). The droplet's strip button for "home computer on but busy" |
 | `emo`  | ollama up, Charlie not loaded (nicole + GLaDOS still serve) |
 | `idle` | ollama down, Charlie not loaded (nicole + GLaDOS still serve) |
 | `mixed`| invariant violation: Charlie and ollama both up |
@@ -409,6 +410,13 @@ the LLM), and a Charlie request answers 400 `backend unavailable: rvc (Charlie
 loads only in GPU mode homo)`. While Qwen holds the GPUs (`qwen_lock.sh`),
 `homo` is refused and emo/idle only write the file; `qwen stop` starts
 hosaka-server, which reads it.
+
+emo, idle and lomo all serve nicole without Charlie, so the state alone cannot
+tell them apart. `gpu_mode.sh` keeps the last verb asked for in
+`$XDG_STATE_HOME/hosaka/gpu-mode`: status says `lomo` while hosaka-server is up,
+Charlie is off and lomo was the last ask; otherwise emo or idle by ollama. A
+crash restart (systemd `Restart=`, or the exec-fn tts watchdog where installed)
+boots from the same two files, so lomo stays kokoro-only.
 
 The service runs as the systemd user unit `gpu-mode.service` (tracked under
 `scripts/systemd/`), linger-enabled alongside `hosaka-server.service`. The

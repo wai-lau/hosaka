@@ -221,3 +221,77 @@ def test_idle_already_idle_is_noop(tmp_path):
     r = _run(tmp_path, bindir, "idle")
     assert r.returncode == 0
     assert _log(tmp_path) == ""
+
+
+# --- lomo -------------------------------------------------------------------
+
+
+def _asked(tmp_path) -> str:
+    return (tmp_path / "xdg" / "hosaka" / "gpu-mode").read_text().strip()
+
+
+def test_lomo_from_homo_drops_charlie_keeps_nicole(tmp_path):
+    bindir = _fake_bin(tmp_path, ollama="inactive", hosaka="active", charlie="on")
+    r = _run(tmp_path, bindir, "lomo")
+    assert r.returncode == 0, r.stderr
+    log = _log(tmp_path)
+    assert "restart hosaka-server charlie=off" in log
+    assert "stop hosaka-server" not in log
+    assert "ollama" not in log  # lomo leaves ollama as it is
+    assert _charlie(tmp_path) == "off"
+    assert _asked(tmp_path) == "lomo"
+    assert _run(tmp_path, bindir, "status").stdout.strip() == "lomo"
+
+
+def test_lomo_leaves_running_ollama_up(tmp_path):
+    bindir = _fake_bin(tmp_path, ollama="active", hosaka="active", charlie="off")
+    r = _run(tmp_path, bindir, "lomo")
+    assert r.returncode == 0, r.stderr
+    assert _log(tmp_path) == ""  # nicole-only already: no blip, ollama kept
+    assert _run(tmp_path, bindir, "status").stdout.strip() == "lomo"
+
+
+def test_lomo_starts_down_server_kokoro_only(tmp_path):
+    bindir = _fake_bin(tmp_path, ollama="inactive", hosaka="inactive")
+    r = _run(tmp_path, bindir, "lomo")
+    assert r.returncode == 0, r.stderr
+    assert "hosaka-server charlie=off" in _log(tmp_path)
+    assert _run(tmp_path, bindir, "status").stdout.strip() == "lomo"
+
+
+def test_lomo_survives_server_restart(tmp_path):
+    # A crash + systemd/watchdog restart boots from the state files: still lomo,
+    # still no Charlie.
+    bindir = _fake_bin(tmp_path, ollama="inactive", hosaka="active", charlie="on")
+    _run(tmp_path, bindir, "lomo")
+    (tmp_path / "hosaka.state").write_text("inactive")
+    assert _run(tmp_path, bindir, "status").stdout.strip() == "idle"  # down is not lomo
+    (tmp_path / "hosaka.state").write_text("active")
+    assert _charlie(tmp_path) == "off"
+    assert _run(tmp_path, bindir, "status").stdout.strip() == "lomo"
+
+
+def test_homo_from_lomo_loads_charlie(tmp_path):
+    bindir = _fake_bin(tmp_path, ollama="inactive", hosaka="active", charlie="on")
+    _run(tmp_path, bindir, "lomo")
+    (tmp_path / "calls.log").unlink()
+    r = _run(tmp_path, bindir, "homo")
+    assert r.returncode == 0, r.stderr
+    assert "restart hosaka-server charlie=on" in _log(tmp_path)
+    assert _run(tmp_path, bindir, "status").stdout.strip() == "homo"
+
+
+def test_idle_from_lomo_is_not_a_noop(tmp_path):
+    bindir = _fake_bin(tmp_path, ollama="active", hosaka="active", charlie="off")
+    _run(tmp_path, bindir, "lomo")
+    r = _run(tmp_path, bindir, "idle")
+    assert r.returncode == 0, r.stderr
+    assert "stop ollama" in _log(tmp_path)
+    assert _run(tmp_path, bindir, "status").stdout.strip() == "idle"
+
+
+def test_already_lomo_is_noop(tmp_path):
+    bindir = _fake_bin(tmp_path, ollama="inactive", hosaka="active", charlie="off")
+    _run(tmp_path, bindir, "lomo")
+    r = _run(tmp_path, bindir, "lomo")
+    assert "already lomo" in r.stdout
