@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# hosaka-health: check the home TTS server every minute and send a down server to the fixer
+# (notify -F), which can restart hosaka-server on wsl. Wai, 2026-11-27: "fixer should autofix
+# this too", after hosaka sat down with nothing noticing.
+#
+# nicole is meant to be up in every GPU mode, Qwen or not: while Qwen holds the GPUs
+# start_server.sh brings it up nicole-only (it fits on the GTX 1660 beside Qwen). So a server
+# that does not answer is always a fault. Starting Qwen stops hosaka-server; this is what brings
+# nicole back.
+#
+# Down = DOWN_CHECKS failed checks in a row. A unit still "activating" is
+# a start in progress (a cold start has taken 6 min) and is not counted until START_GRACE has
+# passed. Still down: sent again every 30 min. Back up: one quiet note.
+set -uo pipefail
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+# shellcheck source=qwen_lock.sh
+. "$here/qwen_lock.sh"   # only to tell the fixer whether Qwen is on
+
+URL=${HOSAKA_HEALTH_URL:-http://127.0.0.1:8123/v1/voices}
+NOTIFY=${HOSAKA_HEALTH_NOTIFY:-$HOME/bin/notify}
+EVERY=${HOSAKA_HEALTH_EVERY:-60}
+DOWN_CHECKS=${HOSAKA_HEALTH_DOWN_CHECKS:-2}
+START_GRACE=${HOSAKA_HEALTH_START_GRACE:-600}
+REPEAT=1800
+UNIT=hosaka-server
+
+check() { curl -s -o /dev/null -w '%{http_code}' -m 10 "$URL"; }
+unit_state() { systemctl --user is-active "$UNIT" 2>/dev/null; }
+# Seconds the unit has been activating (0 when it is not).
+activating_for() {
+  [ "$(unit_state)" = activating ] || { echo 0; return; }
+  local t now_us
+  t=$(systemctl --user show -p InactiveExitTimestampMonotonic --value "$UNIT")
+  now_us=$(awk '{printf "%d", $1 * 1000000}' /proc/uptime)
+  echo $(( (now_us - ${t:-$now_us}) / 1000000 ))
+}
+
+fails=0 down_since= last_sent=0
+while true; do
+  code=$(check)
+  now=$(date +%s)
+  if [ "$code" = 200 ]; then
+    if [ -n "$down_since" ] && [ "$last_sent" -gt 0 ]; then
+      mins=$(( (now - down_since) / 60 ))
+      echo "$(date '+%F %T') up again after ~${mins} min"
+      "$NOTIFY" -c alerts -p low -T white_check_mark -t "hosaka is back" \
+        "The TTS server answers again after about $mins min down." || true
+    fi
+    fails=0 down_since= last_sent=0
+  elif [ "$(activating_for)" -gt 0 ] && [ "$(activating_for)" -lt "$START_GRACE" ]; then
+    : # a start in progress; give it time
+  else
+    fails=$((fails + 1))
+    [ -z "$down_since" ] && down_since=$now
+    if [ "$fails" -ge "$DOWN_CHECKS" ] && [ $((now - last_sent)) -ge $REPEAT ]; then
+      state=$(unit_state)
+      if refuse_if_qwen_holds_gpu 2>/dev/null; then qwen="Qwen is off"; else
+        qwen="Qwen holds the GPUs, so hosaka starts nicole only (it fits beside Qwen)"; fi
+      log=$(journalctl --user -u "$UNIT" -n 5 --no-pager -o cat 2>/dev/null | cut -c1-160)
+      body="Local check: $URL answered ${code:-nothing} ($fails checks in a row, down ~$(( (now - down_since) / 60 )) min).
+Unit $UNIT on wsl: $state. $qwen; hosaka should be up either way (nicole runs in every GPU mode).
+Restarting $UNIT on wsl is the usual fix; if it keeps failing, read its log.
+Last log lines:
+${log:-(none)}"
+      echo "$(date '+%F %T') down: code=$code unit=$state"
+      "$NOTIFY" -F -c alerts -p high -T warning -t "hosaka TTS is down" "$body" && last_sent=$now
+    fi
+  fi
+  sleep "$EVERY"
+done

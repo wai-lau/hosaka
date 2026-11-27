@@ -14,7 +14,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=qwen_lock.sh
 . scripts/qwen_lock.sh
-refuse_if_qwen_holds_gpu || exit 1
+# Qwen wins the 5070 Ti, but nicole fits beside it: Kokoro takes ~0.9 GB on the
+# GTX 1660 and Qwen leaves ~2.8 GB free there (measured 2026-11-27). So while
+# Qwen holds the GPUs start nicole only: no Charlie, and no GLaDOS either (the
+# droplet serves GLaDOS, so the home copy would only take CPU from Qwen).
+if ! refuse_if_qwen_holds_gpu 2>/dev/null; then
+  echo "qwen holds the GPUs: starting nicole only (no Charlie, no GLaDOS)" >&2
+  export HOSAKA_CHARLIE=0 HOSAKA_GLADOS=0
+fi
 # Every model (Kokoro, Chatterbox) is already in the HF cache. Online, Kokoro's
 # KPipeline spends ~80 s on hub round-trips before it builds (measured
 # 2026-11-25: 85 s online vs 4 s offline), which pushed a nicole-only start

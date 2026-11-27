@@ -179,6 +179,10 @@ and tested in `.venv-dev` the same way.
   hosaka-server runs in every mode (homo/lomo/emo/idle) with nicole + GLaDOS; only homo loads Charlie
   (Chatterbox + RVC), chosen at server start from `$XDG_STATE_HOME/hosaka/charlie`
   (`hosaka/charlie_state.py`), so a switch in or out of homo restarts the server. lomo = nicole-only with ollama untouched; the last verb asked is kept in `$XDG_STATE_HOME/hosaka/gpu-mode` so status can report it.
+  While Qwen holds the GPUs (`qwen_lock.sh`) homo is refused and the server
+  starts nicole-only (no Charlie, no GLaDOS: the droplet serves it); nicole fits
+  on the 1660 beside Qwen. `hosaka-health.service` (`scripts/hosaka-health`)
+  sends a down server to the fixer (`notify -F`), which restarts it.
   Never build Chatterbox at import unconditionally again. `~/bin/homo`
   and `~/bin/emo` are thin wrappers over that script. Ollama is a system unit,
   so `deploy/gpu-mode.sudoers` grants NOPASSWD for exactly `systemctl start/stop

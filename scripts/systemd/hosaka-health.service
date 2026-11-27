@@ -1,0 +1,20 @@
+# Health check on the home TTS server every minute; a down server (no live Qwen
+# GPU lock) goes to the fixer via `notify -F`, which can restart hosaka-server.
+#
+# Install (one time):
+#   cp scripts/systemd/hosaka-health.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now hosaka-health.service
+[Unit]
+Description=Health check: hosaka TTS (127.0.0.1:8123) every minute, problems to the fixer (notify -F)
+
+[Service]
+Environment=PATH=/usr/bin:/bin
+ExecStart=/home/wai/src/hosaka/scripts/hosaka-health
+Restart=always
+RestartSec=30
+StandardOutput=append:%h/.cache/hosaka-health.log
+StandardError=append:%h/.cache/hosaka-health.log
+
+[Install]
+WantedBy=default.target

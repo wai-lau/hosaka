@@ -1,3 +1,5 @@
+import os
+
 from hosaka import charlie_state
 from hosaka.cache import SourceCache
 from hosaka.config import (
@@ -102,7 +104,9 @@ _chatterbox = (
 _registry = EngineRegistry(
     kokoro=_kokoro,
     chatterbox=_chatterbox,
-    piper=_make_piper(),
+    # HOSAKA_GLADOS=0 skips GLaDOS: start_server.sh sets it while Qwen holds the
+    # GPUs (the droplet serves GLaDOS, so home nicole is all that is needed then).
+    piper=_make_piper() if os.environ.get("HOSAKA_GLADOS", "1") == "1" else None,
     rvc=_make_rvc({"kokoro": _kokoro, "chatterbox": _chatterbox}) if _charlie else None,
 )
 app = create_app(_registry, _library, do_warmup=True)

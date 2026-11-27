@@ -408,8 +408,13 @@ freed VRAM cached and the GPU queue/watchdog would have to drain around it. A
 nicole-only server skips the startup `ollama stop` (only Charlie contends with
 the LLM), and a Charlie request answers 400 `backend unavailable: rvc (Charlie
 loads only in GPU mode homo)`. While Qwen holds the GPUs (`qwen_lock.sh`),
-`homo` is refused and emo/idle only write the file; `qwen stop` starts
-hosaka-server, which reads it.
+`homo` is refused and the other modes run nicole only: `start_server.sh` sets
+`HOSAKA_CHARLIE=0 HOSAKA_GLADOS=0` then (the droplet serves GLaDOS). nicole fits
+beside Qwen: measured 2026-11-27, Qwen's model leaves ~2.8 GB free on the GTX
+1660 and Kokoro takes ~0.8 GB (4.1 of 6.1 GB with both). Starting Qwen still
+stops hosaka-server; the `hosaka-health` user unit (`scripts/hosaka-health`,
+checks `/v1/voices` every minute) sends a server down two checks in a row to
+the fixer (`notify -F`, ~/src/notify), which restarts it nicole-only.
 
 emo, idle and lomo all serve nicole without Charlie, so the state alone cannot
 tell them apart. `gpu_mode.sh` keeps the last verb asked for in

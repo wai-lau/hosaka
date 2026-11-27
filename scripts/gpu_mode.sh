@@ -21,8 +21,9 @@
 # Charlie is chosen at server start from $XDG_STATE_HOME/hosaka/charlie
 # (hosaka/charlie_state.py), so a switch writes that file and restarts
 # hosaka-server (nicole blips for the restart). While Qwen holds the GPUs
-# (scripts/qwen_lock.sh) hosaka-server stays down: homo is refused, and emo/idle
-# only write the file -- `qwen stop` starts hosaka with it.
+# (scripts/qwen_lock.sh) Charlie cannot load: homo is refused, and the other
+# modes run nicole-only (start_server.sh forces Charlie and GLaDOS off then;
+# nicole fits on the GTX 1660 beside Qwen).
 set -euo pipefail
 here=$(dirname "$0")
 # shellcheck source=qwen_lock.sh
@@ -58,7 +59,6 @@ nicole_only() {
   local was_loaded=0
   charlie_loaded && was_loaded=1
   set_charlie off
-  refuse_if_qwen_holds_gpu 2>/dev/null || return 0
   if [ "$was_loaded" = 1 ] || ! hosaka_active; then
     systemctl --user restart hosaka-server
   fi

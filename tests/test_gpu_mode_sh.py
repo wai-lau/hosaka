@@ -195,15 +195,15 @@ def test_idle_brings_down_server_back_up(tmp_path):
     assert (tmp_path / "hosaka.state").read_text().strip() == "active"
 
 
-def test_emo_while_qwen_holds_gpu_leaves_server_alone(tmp_path):
-    # start_server.sh refuses while Qwen holds the GPU, so a restart would only
-    # crash-loop; `qwen stop` brings hosaka back with the flag as written.
+def test_emo_while_qwen_holds_gpu_brings_nicole_up(tmp_path):
+    # nicole fits beside Qwen on the GTX 1660, so a down server is started
+    # (start_server.sh then forces Charlie + GLaDOS off on its own).
     bindir = _fake_bin(tmp_path, ollama="inactive", hosaka="inactive", charlie="on")
     _qwen_lock(tmp_path)
     r = _run(tmp_path, bindir, "emo")
     assert r.returncode == 0, r.stderr
     log = _log(tmp_path)
-    assert "hosaka-server" not in log
+    assert "restart hosaka-server charlie=off" in log
     assert "start ollama" in log
     assert _charlie(tmp_path) == "off"
 
